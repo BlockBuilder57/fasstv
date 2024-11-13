@@ -114,7 +114,7 @@ namespace fasstv {
 		instructions.push_back({"VIS stop",   30,  1200});
 	}
 
-	void SSTV::DoTheThing(Rect rect) {
+	std::vector<float> SSTV::DoTheThing(Rect rect) {
 		//if (current_mode == nullptr)
 		//	return;
 
@@ -138,9 +138,9 @@ namespace fasstv {
 			Instruction* ins = &instructions[0];
 
 			float length_ms = ins->length_ms;
-			if (ins->flags & InstructionFlags::LengthUsesIndex) {
+			if(ins->flags & InstructionFlags::LengthUsesIndex) {
 				length_ms = current_mode->timings[ins->length_ms];
-				//LogDebug("Length from index: {}, {}", ins->length_ms, mode->timings[ins->length_ms]);
+				// LogDebug("Length from index: {}, {}", ins->length_ms, mode->timings[ins->length_ms]);
 			}
 
 			int len_samples = length_ms / (timestep * 1000);
@@ -148,7 +148,7 @@ namespace fasstv {
 			LogDebug("New instruction \"{}\" ({} samples)", ins->name, len_samples);
 
 			// increment a new line when we find them
-			if (ins->flags & InstructionFlags::NewLine)
+			if(ins->flags & InstructionFlags::NewLine)
 				cur_y++;
 
 			/*if (ins->flags & InstructionFlags::PitchUsesIndex) {
@@ -161,24 +161,22 @@ namespace fasstv {
 				LogDebug("Pitch is {}", ins->pitch);
 			}*/
 
-			for (int i = 0; i < len_samples; i++) {
+			for(int i = 0; i < len_samples; i++) {
 				float widthfrac = ((float)i / len_samples);
 				cur_x = current_mode->width * widthfrac;
 
 				// by default, just use the value
 				float pitch = ins->pitch;
 
-				if (ins->flags & InstructionFlags::PitchUsesIndex) {
+				if(ins->flags & InstructionFlags::PitchUsesIndex) {
 					// take the pitch from an index
 					pitch = current_mode->frequencies[ins->pitch];
-				}
-				else if (ins->flags & InstructionFlags::PitchIsSweep) {
+				} else if(ins->flags & InstructionFlags::PitchIsSweep) {
 					pitch = ScanSweep(current_mode, cur_x, true);
-				}
-				else if (ins->flags & InstructionFlags::PitchIsDelegated) {
+				} else if(ins->flags & InstructionFlags::PitchIsDelegated) {
 					// we're about to do a new scan, delegate it
 
-					if (current_mode->func_scan_handler != nullptr) {
+					if(current_mode->func_scan_handler != nullptr) {
 						// calculate the letterbox
 						bool letterbox_sides = letterbox.x > 0 && (cur_x < letterbox.x || cur_x >= letterbox.x + letterbox.w);
 						bool letterbox_tops = letterbox.y > 0 && (cur_y < letterbox.y || cur_y >= letterbox.y + letterbox.h);
@@ -187,7 +185,7 @@ namespace fasstv {
 
 						// calculate the sample to take when we're not drawing the letterbox
 						// otherwise, the nullptr is returned and the pattern will be drawn
-						if (!letterbox_sides && !letterbox_tops) {
+						if(!letterbox_sides && !letterbox_tops) {
 							// where we're at along our scanline (remember that height's flipped)
 							int sample_x = rect.w * (std::max(cur_x - letterbox.x, 0) / (float)letterbox.w);
 							int sample_y = rect.h * (1.f - (std::max(cur_y - letterbox.y, 0) / (float)letterbox.h));
@@ -199,8 +197,7 @@ namespace fasstv {
 						}
 
 						pitch = current_mode->func_scan_handler(ins, cur_x, cur_y, pixel);
-					}
-					else {
+					} else {
 						LogError("Mode {} has delegated pitch with no scan handler", current_mode->name);
 						pitch = 1500.f;
 					}
@@ -223,12 +220,7 @@ namespace fasstv {
 			instructions.erase(instructions.begin());
 		}
 
-		// write to file
-		std::ofstream file("file.f32", std::ios::binary);
-		file.write(reinterpret_cast<const char*>(samples.data()), samples.size() * sizeof(float));
-		file.close();
-
-		samples.clear();
+		return samples;
 	}
 
 	float SSTV::ScanSweep(Mode* mode, int pos_x, bool invert) {

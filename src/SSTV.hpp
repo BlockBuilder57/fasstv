@@ -290,7 +290,7 @@ namespace fasstv {
 		void SetMode(const std::string& name);
 		void SetMode(Mode* mode);
 
-		void DoTheThing(Rect rect);
+		std::vector<float> DoTheThing(Rect rect);
 
 		static float ScanSweep(Mode* mode, int pos_x, bool invert);
 		static float ScanMonochrome(Instruction* ins, int pos_x, int pos_y, std::uint8_t* sampled_pixel);

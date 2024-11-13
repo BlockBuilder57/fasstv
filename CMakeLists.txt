@@ -13,8 +13,16 @@ list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
 #include(Policies)
 include(ProjectFuncs)
 
-# required system dependencies
-#find_package(libav REQUIRED)
+find_package(FFmpeg COMPONENTS AVCODEC AVFORMAT AVUTIL AVDEVICE REQUIRED)
+
+# default linker
+if(NOT FASSTV_LINKER AND "${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
+	set(FASSTV_LINKER "lld")
+elseif(NOT FASSTV_LINKER)
+	set(FASSTV_LINKER "bfd")
+endif()
+
+fasstv_set_alternate_linker()
 
 add_subdirectory(src)
 
