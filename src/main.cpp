@@ -15,8 +15,16 @@ extern "C" {
 	#include <libavutil/samplefmt.h>
 }
 
+int select_channel_layout(const AVCodec *codec, AVChannelLayout *dst)
+{
+	AVChannelLayout chy = (AVChannelLayout)AV_CHANNEL_LAYOUT_MONO;
+	return av_channel_layout_copy(dst, &chy);
+}
+
 void encode(AVCodecContext* ctx, AVFrame* frame, AVPacket* pkt, std::ofstream& file) {
-	int ret;
+	int ret = 0;
+
+	//fasstv::Logger::The().Debug("ctx: {}, frame: {}, pkt: {}", reinterpret_cast<void*>(ctx), reinterpret_cast<void*>(frame), reinterpret_cast<void*>(pkt));
 
 	// send frame for encoding
 	ret = avcodec_send_frame(ctx, frame);
@@ -27,9 +35,11 @@ void encode(AVCodecContext* ctx, AVFrame* frame, AVPacket* pkt, std::ofstream& f
 
 	// read all available output packets
 	while (ret >= 0) {
+		//fasstv::Logger::The().Debug("We have {} packets to receive?", ret);
 		ret = avcodec_receive_packet(ctx, pkt);
 		if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
-			fasstv::Logger::The().Error("Reached end of file");
+			if (ret == AVERROR_EOF)
+				fasstv::Logger::The().Debug("Reached end of file");
 			return;
 		}
 		else if (ret < 0) {
@@ -52,7 +62,7 @@ int main(int argc, char** argv) {
 
 	fasstv::SSTV& sstv = fasstv::SSTV::The();
 
-	log.Debug("Finding encoder for AV_CODEC_ID_MP3");
+	log.Debug("Finding encoder for thing");
 	const AVCodec* codec = avcodec_find_encoder(AV_CODEC_ID_MP3);
 	if (!codec) {
 		log.Error("Failed to get codec");
@@ -68,10 +78,15 @@ int main(int argc, char** argv) {
 
 	log.Debug("Setting context parameters");
 	ctx->sample_rate = 44100;
-	ctx->bit_rate = 32000;
-	ctx->sample_fmt = AV_SAMPLE_FMT_S16;
-	AVChannelLayout chlay = AV_CHANNEL_LAYOUT_MONO;
-	av_channel_layout_copy(&ctx->ch_layout, &chlay);
+	ctx->bit_rate = 320000;
+	ctx->sample_fmt = AV_SAMPLE_FMT_FLTP;
+
+	log.Debug("Selecting channel layout");
+	int ret = select_channel_layout(codec, &ctx->ch_layout);
+	if (ret < 0) {
+		log.Error("Failed to select channel layout");
+		return 1;
+	}
 
 	log.Debug("Opening codec context");
 	if (avcodec_open2(ctx, codec, nullptr) < 0) {
@@ -79,19 +94,27 @@ int main(int argc, char** argv) {
 		return 1;
 	}
 
-	log.Debug("Allocating packet and frame");
+	log.Debug("Allocating frame");
 
 	// packet for holding encoded output
 	AVPacket* pkt = av_packet_alloc();
+	if (pkt == nullptr) {
+		fasstv::Logger::The().Error("Could not allocate packet");
+		return 1;
+	}
 
 	// frame for holding input
 	AVFrame* frame = av_frame_alloc();
+	if (frame == nullptr) {
+		log.Error("Could not allocate frame");
+		return 1;
+	}
 
 	frame->nb_samples = ctx->frame_size;
 	frame->format = ctx->sample_fmt;
 
 	log.Debug("Copying context channel layout to frame channel layout");
-	int ret = av_channel_layout_copy(&frame->ch_layout, &ctx->ch_layout);
+	ret = av_channel_layout_copy(&frame->ch_layout, &ctx->ch_layout);
 	if (ret < 0) {
 		log.Error("Could not copy channel layout");
 		return 1;
@@ -106,38 +129,37 @@ int main(int argc, char** argv) {
 
 	log.Debug("Making some samples");
 
-	//std::vector<float> sstvsamples = {};
+	std::vector<float> sstvsamples = {};
 	//sstvsamples.push_back(0.5);
-	//sstvsamples = sstv.DoTheThing({0, 0, 320, 240});
+	sstvsamples = sstv.DoTheThing({0, 0, 320, 240});
+
+	uint32_t frames_needed = sstvsamples.size() / ctx->frame_size;
 
 	log.Debug("Creating file");
 	// write to file
 	std::ofstream file(std::format("{:%Y-%m-%d %H-%M-%S}.bin", floor<std::chrono::seconds>(std::chrono::system_clock::now())), std::ios::binary);
 
-	float t = 0;
-	float tincr = 2 * M_PI * 440.0 / ctx->sample_rate;
-	for (int i = 0; i < 200; i++) {
+	uint32_t t = 0;
+	//float tincr = 2 * M_PI * 440.0 / ctx->sample_rate;
+	for (int i = 0; i < frames_needed; i++) {
 		/* make sure the frame is writable -- makes a copy if the encoder
          * kept a reference internally */
-		log.Debug("  Make frame {} writable", i);
+		//log.Debug("  Make frame {} writable (was writable? {})", i, !!av_frame_is_writable(frame));
 		ret = av_frame_make_writable(frame);
 		if (ret < 0) {
 			log.Error("Failed to make frame writable!");
 			return 1;
 		}
 
-		log.Debug("  Get a pointer to sample data");
-		uint16_t* samples = (uint16_t*)frame->data[0];
+		//log.Debug("  Get a pointer to sample data");
+		auto* samples = (float*)frame->data[0];
 
 		for (int j = 0; j < ctx->frame_size; j++) {
-			samples[2*j] = (int)(sin(t) * 10000);
-
-			for (int k = 1; k < ctx->ch_layout.nb_channels; k++)
-				samples[2*j + k] = samples[2*j];
-			t += tincr;
+			samples[j] = sstvsamples[t];
+			t++;
 		}
 
-		log.Debug("  Encode packet");
+		//log.Debug("  Encode packet");
 		encode(ctx, frame, pkt, file);
 	}
 

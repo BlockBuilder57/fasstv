@@ -145,7 +145,7 @@ namespace fasstv {
 
 			int len_samples = length_ms / (timestep * 1000);
 
-			LogDebug("New instruction \"{}\" ({} samples)", ins->name, len_samples);
+			//LogDebug("New instruction \"{}\" ({} samples)", ins->name, len_samples);
 
 			// increment a new line when we find them
 			if(ins->flags & InstructionFlags::NewLine)
