@@ -2,7 +2,6 @@ add_executable(fasstv
 		main.cpp
 		util/Logger.cpp
 		util/StdoutSink.cpp
-		util/Rect.cpp
 		util/Oscillator.cpp
 		SSTV.cpp
 		)
@@ -22,5 +21,8 @@ if(FFMPEG_FOUND)
 endif()
 
 target_link_libraries(fasstv
+		SDL3::SDL3
+		SDL3_image::SDL3_image
+
 		${FFMPEG_LIBRARIES}
 		)

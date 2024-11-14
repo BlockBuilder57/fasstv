@@ -84,6 +84,14 @@ namespace fasstv {
 		}
 	}
 
+	void SSTV::SetPixelProvider(fasstv::SSTV::PixelProviderCallback cb) {
+		pixProviderFunc = cb;
+	}
+
+	SSTV::Mode* SSTV::GetMode() {
+		return current_mode;
+	}
+
 	void SSTV::CreateVOXHeader() {
 		instructions.push_back({"VOX Low",  100, 1900});
 		instructions.push_back({"VOX Low",  100, 1500});
@@ -114,22 +122,45 @@ namespace fasstv {
 		instructions.push_back({"VIS stop",   30,  1200});
 	}
 
-	std::vector<float> SSTV::DoTheThing(Rect rect) {
+	SDL_Rect CreateLetterbox(int box_width, int box_height, SDL_Rect rect) {
+		SDL_Rect ret {0, 0, box_width, box_height };
+
+		// return early here if letterboxing should be disabled
+		//return ret;
+
+		// get scaling factors for dimensions
+		float aspect_box = box_width / (float)box_height;
+		float aspect_rect = rect.w / (float)rect.h;
+
+		float scalar = aspect_box / aspect_rect;
+
+		if (rect.w > rect.h) {
+			// for when the width is bigger than the height (ie 16:9)
+			ret.h = box_height * scalar;
+			ret.y = ((box_height - ret.h) / 2);
+		}
+		else {
+			// for when the height is bigger than the width (ie 9:16)
+			// i still don't know why the math checks out here, but it does
+			ret.w = box_height * (aspect_box / scalar);
+			ret.x = ((box_width - ret.w) / 2);
+		}
+
+		return ret;
+	}
+
+	std::vector<float> SSTV::DoTheThing(SDL_Rect rect) {
 		//if (current_mode == nullptr)
 		//	return;
 
 		current_time = 0;
 		phase = 0;
 
-		Rect letterbox = Rect::CreateLetterbox(current_mode->width, current_mode->lines, rect);
+		SDL_Rect letterbox = CreateLetterbox(current_mode->width, current_mode->lines, rect);
 
 		// sampling helpers for sampling the screen
 		// do it all right now to save time!
 		// eventually the "realtime" idea will happen, but let's keep it simple for now
-		std::vector<std::uint8_t> pixels;
-		pixels.reserve(4 * rect.w * rect.h);
-		std::fill(pixels.begin(), pixels.end(), 127);
-		//glReadPixels(0, 0, rect.w, rect.h, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
 
 		cur_x = -1;
 		cur_y = -1;
@@ -190,10 +221,11 @@ namespace fasstv {
 							int sample_x = rect.w * (std::max(cur_x - letterbox.x, 0) / (float)letterbox.w);
 							int sample_y = rect.h * (1.f - (std::max(cur_y - letterbox.y, 0) / (float)letterbox.h));
 
-							// get pixel at that sample (no nice filtering...)
-							int pixel_idx = sample_x + ((sample_y - 1) * rect.w);
-							pixel_idx = std::max(pixel_idx, 0);
-							pixel = &pixels[pixel_idx * 4];
+							// get pixel at that sample
+							if (pixProviderFunc != nullptr)
+								pixel = pixProviderFunc(sample_x, sample_y);
+							else
+								LogError("Pixel provider is null!!!");
 						}
 
 						pitch = current_mode->func_scan_handler(ins, cur_x, cur_y, pixel);

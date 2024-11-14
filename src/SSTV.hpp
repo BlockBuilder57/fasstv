@@ -5,13 +5,15 @@
 #include <array>
 #include <util/Logger.hpp>
 #include <util/Oscillator.hpp>
-#include <util/Rect.hpp>
+#include <SDL3/SDL_rect.h>
 #include <vector>
 
 namespace fasstv {
 
 	class SSTV {
 	   public:
+		typedef std::uint8_t* (*PixelProviderCallback)(int sample_x, int sample_y);
+
 		static SSTV& The();
 
 		enum InstructionFlags : std::uint8_t {
@@ -289,8 +291,11 @@ namespace fasstv {
 
 		void SetMode(const std::string& name);
 		void SetMode(Mode* mode);
+		void SetPixelProvider(PixelProviderCallback cb);
 
-		std::vector<float> DoTheThing(Rect rect);
+		SSTV::Mode* GetMode();
+
+		std::vector<float> DoTheThing(SDL_Rect rect);
 
 		static float ScanSweep(Mode* mode, int pos_x, bool invert);
 		static float ScanMonochrome(Instruction* ins, int pos_x, int pos_y, std::uint8_t* sampled_pixel);
@@ -312,6 +317,7 @@ namespace fasstv {
 		int cur_x = -1;
 		int cur_y = -1;
 		Oscillator osc { kOsc_Sin };
+		PixelProviderCallback pixProviderFunc {};
 	};
 
 } // namespace fasstv
