@@ -17,6 +17,8 @@ find_package(FFmpeg COMPONENTS AVCODEC AVFORMAT AVUTIL AVDEVICE REQUIRED)
 find_package(SDL3 REQUIRED)
 find_package(SDL3_image REQUIRED)
 
+add_subdirectory(third_party/cargs)
+
 # default linker
 if(NOT FASSTV_LINKER AND "${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
 	set(FASSTV_LINKER "lld")
@@ -27,4 +29,3 @@ endif()
 fasstv_set_alternate_linker()
 
 add_subdirectory(src)
-

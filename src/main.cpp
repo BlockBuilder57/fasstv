@@ -4,6 +4,7 @@
 #include <util/StdoutSink.hpp>
 #include <SSTV.hpp>
 
+#include <cargs.h>
 #include <SDL3_image/SDL_image.h>
 
 #include <fstream>
@@ -154,6 +155,13 @@ namespace fasstv {
 	}
 }
 
+static struct cag_option options[] = {
+	{ .identifier = 'i', .access_letters = "i", .access_name = "input", .value_name = "<image file>", .description = "Path of input image" },
+	{ .identifier = 'o', .access_letters = "o", .access_name = "output", .value_name = nullptr, .description = "Path of output audio. Defaults to the input path, with the mode appended, and with an mp3 extension." },
+	{ .identifier = 'f', .access_letters = "f", .access_name = "format", .value_name = "<SSTV format|VIS code>", .description = "Specifies SSTV format by name or VIS code." },
+	{ .identifier = 'h', .access_letters = nullptr, .access_name = "help", .value_name = nullptr, .description = "Show help" }
+};
+
 SDL_Surface* surf = nullptr;
 std::uint8_t colorHolder[4] = {};
 std::uint32_t defaultColor = 0xaaaaaaa;
@@ -167,38 +175,83 @@ std::uint8_t* GetSampleFromSurface(int sample_x, int sample_y) {
 }
 
 int main(int argc, char** argv) {
-	static_cast<void>(argc);
-	static_cast<void>(argv);
+	std::filesystem::path inputPath {};
+	std::filesystem::path outputPath {};
 
 	fasstv::LoggerAttachStdout();
 	fasstv::LogDebug("Built {} {}", __DATE__, __TIME__);
 
-	if (argc < 2) {
+	fasstv::SSTV& sstv = fasstv::SSTV::The();
+
+	cag_option_context context;
+	cag_option_init(&context, options, CAG_ARRAY_SIZE(options), argc, argv);
+	while (cag_option_fetch(&context)) {
+		switch (cag_option_get_identifier(&context)) {
+			case 'i': {
+				const char* chary = cag_option_get_value(&context);
+				if (chary != nullptr)
+					inputPath = std::filesystem::path(chary);
+				break;
+			}
+			case 'o': {
+				const char* chary = cag_option_get_value(&context);
+				if (chary != nullptr)
+					outputPath = std::filesystem::path(chary);
+				break;
+			}
+			case 'f': {
+				const char* chary = cag_option_get_value(&context);
+				if (chary != nullptr) {
+					if (isdigit(chary[0]))
+						sstv.SetMode(std::atoi(chary));
+					else
+						sstv.SetMode(chary);
+				}
+				break;
+			}
+			case 'h':
+				printf("Usage: fasstv [OPTIONS]...\n");
+				printf("Quickly converts an image file into a valid SSTV signal.\n\n");
+				cag_option_print(options, CAG_ARRAY_SIZE(options), stdout);
+				return EXIT_SUCCESS;
+			case '?':
+				cag_option_print_error(&context, stdout);
+				break;
+		}
+	}
+
+	for (int param_index = cag_option_get_index(&context); param_index < argc; ++param_index) {
+		//printf("additional parameter: %s\n", argv[param_index]);
+	}
+
+	if (inputPath.empty()) {
 		fasstv::LogError("Need a file to load!");
 		return 1;
 	}
 
-	auto path = std::filesystem::path(argv[1]);
-	surf = IMG_Load(path.c_str());
+	surf = IMG_Load(inputPath.c_str());
 	if (!surf) {
-		fasstv::LogError("SDL3_image failed to load texture! {}", path.c_str());
+		fasstv::LogError("SDL3_image failed to load texture! {}", inputPath.c_str());
 		return 1;
 	}
 
-	fasstv::SSTV& sstv = fasstv::SSTV::The();
-	sstv.SetMode("Robot 36");
+	// fallback to Robot 36 if no mode set
+	if (sstv.GetMode() == nullptr)
+		sstv.SetMode("Robot 36");
 
 	sstv.SetPixelProvider(&GetSampleFromSurface);
 	auto samples = sstv.DoTheThing({0, 0, surf->w, surf->h});
 	for (float& smp : samples)
 		smp *= 0.6f;
 
-	auto mp3path = path;
-	mp3path.replace_filename(path.stem().string() + " " + sstv.GetMode()->name + ".mp3");
+	if (outputPath.empty()) {
+		outputPath = inputPath;
+		outputPath.replace_filename(inputPath.stem().string() + " " + sstv.GetMode()->name + ".mp3");
+	}
 
-	std::ofstream file(mp3path.string(), std::ios::binary);
+	std::ofstream file(outputPath.string(), std::ios::binary);
 	fasstv::samples_to_mp3(samples, file);
 	file.close();
 
-	return 0;
+	return EXIT_SUCCESS;
 }
