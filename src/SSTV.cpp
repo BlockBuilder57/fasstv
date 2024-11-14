@@ -13,12 +13,24 @@ namespace fasstv {
 	}
 
 	SSTV::SSTV() {
-		SetMode("Robot 36");
+		//SetMode("Robot 36");
 	}
 
 	void SSTV::SetMode(const std::string& name) {
 		for (auto& mode : MODES) {
 			if (mode.name != name)
+				continue;
+
+			SetMode(&mode);
+			return;
+		}
+
+		SetMode(nullptr);
+	}
+
+	void SSTV::SetMode(int vis_code) {
+		for (auto& mode : MODES) {
+			if (mode.vis_code != vis_code)
 				continue;
 
 			SetMode(&mode);

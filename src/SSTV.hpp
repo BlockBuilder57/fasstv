@@ -290,6 +290,7 @@ namespace fasstv {
 		SSTV();
 
 		void SetMode(const std::string& name);
+		void SetMode(int vis_code);
 		void SetMode(Mode* mode);
 		void SetPixelProvider(PixelProviderCallback cb);
 

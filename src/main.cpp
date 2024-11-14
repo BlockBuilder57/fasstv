@@ -19,35 +19,29 @@ extern "C" {
 }
 
 namespace fasstv {
-	int select_channel_layout(const AVCodec *codec, AVChannelLayout *dst)
-	{
-		AVChannelLayout chy = (AVChannelLayout)AV_CHANNEL_LAYOUT_MONO;
-		return av_channel_layout_copy(dst, &chy);
-	}
-	
 	void encode(AVCodecContext* ctx, AVFrame* frame, AVPacket* pkt, std::ofstream& file) {
 		int ret = 0;
 
-		//fasstv::Logger::The().Debug("ctx: {}, frame: {}, pkt: {}", reinterpret_cast<void*>(ctx), reinterpret_cast<void*>(frame), reinterpret_cast<void*>(pkt));
+		//LogDebug("ctx: {}, frame: {}, pkt: {}", reinterpret_cast<void*>(ctx), reinterpret_cast<void*>(frame), reinterpret_cast<void*>(pkt));
 
 		// send frame for encoding
 		ret = avcodec_send_frame(ctx, frame);
 		if (ret < 0) {
-			fasstv::Logger::The().Error("Error sending the frame to the encoder");
+			LogError("Error sending the frame to the encoder");
 			return;
 		}
 
 		// read all available output packets
 		while (ret >= 0) {
-			//fasstv::Logger::The().Debug("We have {} packets to receive?", ret);
+			//LogDebug("We have {} packets to receive?", ret);
 			ret = avcodec_receive_packet(ctx, pkt);
 			if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
 				if (ret == AVERROR_EOF)
-					fasstv::Logger::The().Debug("Reached end of file");
+					LogDebug("Reached end of file");
 				return;
 			}
 			else if (ret < 0) {
-				fasstv::Logger::The().Error("Error encoding audio frame");
+				LogError("Error encoding audio frame");
 			}
 
 			file.write(reinterpret_cast<const char*>(pkt->data), pkt->size);
@@ -56,7 +50,7 @@ namespace fasstv {
 	}
 
 	bool samples_to_mp3(std::vector<float> sstvsamples, std::ofstream& file) {
-		fasstv::Logger& log = fasstv::Logger::The();
+		int ret = 0;
 
 		LogDebug("Finding encoder");
 		const AVCodec* codec = avcodec_find_encoder(AV_CODEC_ID_MP3);
@@ -78,7 +72,8 @@ namespace fasstv {
 		ctx->sample_fmt = AV_SAMPLE_FMT_FLTP;
 
 		LogDebug("Selecting channel layout");
-		int ret = select_channel_layout(codec, &ctx->ch_layout);
+		AVChannelLayout chy = (AVChannelLayout)AV_CHANNEL_LAYOUT_MONO;
+		ret = av_channel_layout_copy(&ctx->ch_layout, &chy);
 		if (ret < 0) {
 			LogError("Failed to select channel layout");
 			return false;
@@ -124,18 +119,15 @@ namespace fasstv {
 		}
 
 		LogDebug("Making some samples");
-		uint32_t frames_needed = sstvsamples.size() / ctx->frame_size;
+		int frames_needed = sstvsamples.size() / ctx->frame_size;
 
-		uint32_t t = 0;
-		//float tincr = 2 * M_PI * 440.0 / ctx->sample_rate;
+		std::uint32_t t = 0;
 		for (int i = 0; i < frames_needed; i++) {
-			/* make sure the frame is writable -- makes a copy if the encoder
-         * kept a reference internally */
 			//LogDebug("  Make frame {} writable (was writable? {})", i, !!av_frame_is_writable(frame));
 			ret = av_frame_make_writable(frame);
 			if (ret < 0) {
 				LogError("Failed to make frame writable!");
-				return false;
+				break;
 			}
 
 			//LogDebug("  Get a pointer to sample data");
@@ -179,8 +171,6 @@ int main(int argc, char** argv) {
 	static_cast<void>(argv);
 
 	fasstv::LoggerAttachStdout();
-
-	fasstv::Logger& log = fasstv::Logger::The();
 	fasstv::LogDebug("Built {} {}", __DATE__, __TIME__);
 
 	if (argc < 2) {
@@ -196,10 +186,12 @@ int main(int argc, char** argv) {
 	}
 
 	fasstv::SSTV& sstv = fasstv::SSTV::The();
+	sstv.SetMode("Robot 36");
+
 	sstv.SetPixelProvider(&GetSampleFromSurface);
 	auto samples = sstv.DoTheThing({0, 0, surf->w, surf->h});
-
-	//std::string timestamp = std::format("{:%Y-%m-%d %H-%M-%S}", floor<std::chrono::seconds>(std::chrono::system_clock::now()));
+	for (float& smp : samples)
+		smp *= 0.6f;
 
 	auto mp3path = path;
 	mp3path.replace_filename(path.stem().string() + " " + sstv.GetMode()->name + ".mp3");
