@@ -4,6 +4,7 @@ add_executable(fasstv
 		util/StdoutSink.cpp
 		util/Oscillator.cpp
 		SSTV.cpp
+		AudioExport.cpp
 		)
 
 fasstv_setup_target(fasstv)
