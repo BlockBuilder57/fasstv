@@ -7,6 +7,7 @@
 #include <SSTV.hpp>
 
 #include <cargs.h>
+#include <SDL3/SDL.h>
 
 #include <fstream>
 #include <filesystem>
@@ -51,6 +52,14 @@ int main(int argc, char** argv) {
 
 	fasstv::LoggerAttachStdout();
 	fasstv::LogDebug("Built {} {}", __DATE__, __TIME__);
+
+	fasstv::LogDebug("{}", SDL_VERSION);
+	fasstv::LogDebug("{}", SDL_GetRevision());
+
+	if (!SDL_Init(SDL_INIT_CAMERA)) {
+		fasstv::LogError("Couldn't initialize SDL: {}", SDL_GetError());
+		return SDL_APP_FAILURE;
+	}
 
 	fasstv::SSTV& sstv = fasstv::SSTV::The();
 
@@ -106,9 +115,36 @@ int main(int argc, char** argv) {
 		}
 	}
 
-	for (int param_index = cag_option_get_index(&context); param_index < argc; ++param_index) {
-		//printf("additional parameter: %s\n", argv[param_index]);
+	/*int devcount = 0;
+	SDL_CameraID* devices = SDL_GetCameras(&devcount);
+	if (devices == NULL) {
+		fasstv::LogError("Couldn't enumerate camera devices: %s", SDL_GetError());
+		return SDL_APP_FAILURE;
+	} else if (devcount == 0) {
+		fasstv::LogError("Couldn't find any camera devices! Please connect a camera and try again.");
+		return SDL_APP_FAILURE;
 	}
+
+	fasstv::LogDebug("Found {} cameras", devcount);
+	for (int i = 0; i < devcount; i++)
+		fasstv::LogDebug("Camera {}: {}", devices[i], SDL_GetCameraName(devices[i]));
+	SDL_CameraID camId = devices[1];
+
+	int formatCount = 0;
+	SDL_CameraSpec desiredSpec = {};
+	SDL_CameraSpec** camFormats = SDL_GetCameraSupportedFormats(camId, &formatCount);
+	for (int i = 0; i < formatCount; i++) {
+		SDL_CameraSpec* pSpec = camFormats[i];
+		//if (pSpec->width == 1920 && pSpec->framerate_numerator == 30 && pSpec->format == SDL_PIXELFORMAT_BGR24) {
+			SDL_Log("Trying this one");
+			memcpy(&desiredSpec, pSpec, sizeof(SDL_CameraSpec));
+			break;
+		//}
+		SDL_Log("Cam %d Mode %d: %dx%d @ %d/%d - %s", camId, i, pSpec->width, pSpec->height, pSpec->framerate_numerator, pSpec->framerate_denominator, SDL_GetPixelFormatName(pSpec->format));
+	}
+
+	SDL_Camera* cam = SDL_OpenCamera(camId, &desiredSpec);
+	SDL_free(devices);*/
 
 	// fallback to Robot 36 if no mode set
 	if (sstv.GetMode() == nullptr)
@@ -121,6 +157,12 @@ int main(int argc, char** argv) {
 	surfOrig = fasstv::LoadImage(inputPath);
 	if (surfOrig == nullptr)
 		return EXIT_FAILURE;
+
+	/*SDL_free(surfOrig);
+	surfOrig = nullptr;
+	Uint64 timestampNS;
+	while (surfOrig == nullptr)
+		surfOrig = SDL_AcquireCameraFrame(cam, &timestampNS);*/
 
 	SDL_Rect letterbox = fasstv::CreateLetterbox(mode->width, mode->lines, {0, 0, surfOrig->w, surfOrig->h});
 
