@@ -12,12 +12,12 @@
 #include <filesystem>
 
 static struct cag_option options[] = {
-	{ .identifier = 'i', .access_letters = "i", .access_name = "input", .value_name = "<image file>", .description = "Path of input image" },
-	{ .identifier = 'o', .access_letters = "o", .access_name = "output", .value_name = "<audio file>", .description = "Path of output audio. Defaults to the input path, with the mode appended, and with an mp3 extension." },
+	{ .identifier = 'i', .access_letters = "i", .access_name = "input", .value_name = "<image file>", .description = "Path of the input image." },
+	{ .identifier = 'o', .access_letters = "o", .access_name = "output", .value_name = "<audio file>", .description = "Path of the output audio. Defaults to the input path, with the mode appended, and with an mp3 extension." },
 	{ .identifier = 'f', .access_letters = "f", .access_name = "format", .value_name = "<SSTV format|VIS code>", .description = "Specifies SSTV format by name or VIS code." },
-	{ .identifier = 's', .access_letters = nullptr, .access_name = "stretch", .value_name = nullptr, .description = "Stretch to fit?" },
-	{ .identifier = 'm', .access_letters = nullptr, .access_name = "method", .value_name = "<method>", .description = "Scale method (eg. bilinear, bicubic, nearest, etc.)" },
-	{ .identifier = 'h', .access_letters = nullptr, .access_name = "help", .value_name = nullptr, .description = "Show help" }
+	{ .identifier = 's', .access_letters = nullptr, .access_name = "stretch", .value_name = nullptr, .description = "If specified, stretch to fit." },
+	{ .identifier = 'm', .access_letters = "m", .access_name = "method", .value_name = "<method>", .description = "Scale method (eg. bilinear, bicubic, nearest, etc.)" },
+	{ .identifier = 'h', .access_letters = "h", .access_name = "help", .value_name = nullptr, .description = "Show help" }
 };
 
 struct ScaleMethod {
@@ -116,7 +116,12 @@ int main(int argc, char** argv) {
 
 	// load in image, get proper dimentions
 	fasstv::SSTV::Mode* mode = sstv.GetMode();
-	SDL_Surface* surfOrig = fasstv::LoadImage(inputPath);
+	SDL_Surface* surfOrig = nullptr;
+
+	surfOrig = fasstv::LoadImage(inputPath);
+	if (surfOrig == nullptr)
+		return EXIT_FAILURE;
+
 	SDL_Rect letterbox = fasstv::CreateLetterbox(mode->width, mode->lines, {0, 0, surfOrig->w, surfOrig->h});
 
 	SDL_Surface* surfOut;
@@ -143,11 +148,15 @@ int main(int argc, char** argv) {
 	std::string extension = ".wav";
 	if (outputPath.empty()) {
 		outputPath = inputPath;
-		outputPath.replace_filename(inputPath.stem().string() + " " + sstv.GetMode()->name + extension);
+		outputPath.replace_filename(inputPath.filename().string() + " " + sstv.GetMode()->name + extension);
 	}
 
+	fasstv::LogInfo("Saving \"{}\"...", outputPath.filename().c_str());
 	std::ofstream file(outputPath.string(), std::ios::binary);
-	fasstv::SamplesToWAV(samples, samplerate, file);
+	if (outputPath.extension() == ".wav")
+		fasstv::SamplesToWAV(samples, samplerate, file);
+	else
+		fasstv::SamplesToAVCodec(samples, samplerate, file);
 	file.close();
 
 	return EXIT_SUCCESS;

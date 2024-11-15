@@ -94,6 +94,19 @@ namespace fasstv {
 				instructions.push_back(ins);
 			}
 		}
+
+		// Set instruction length ahead of time
+		float totalLength_ms = 0.0f;
+		for (auto& ins : instructions) {
+			float length_ms = ins.length_ms;
+			if(ins.flags & InstructionFlags::LengthUsesIndex) {
+				length_ms = current_mode->timings[ins.length_ms];
+				//LogDebug("Length from index: {}, {}", ins.length_ms, mode->timings[ins.length_ms]);
+			}
+			ins.length_ms = length_ms;
+			totalLength_ms += length_ms;
+		}
+		LogDebug("Mode has length: {}s", totalLength_ms / 1000.f);
 	}
 
 	void SSTV::SetSampleRate(int samplerate) {
@@ -163,21 +176,21 @@ namespace fasstv {
 			Instruction* ins = &instructions[0];
 
 			float length_ms = ins->length_ms;
-			if(ins->flags & InstructionFlags::LengthUsesIndex) {
+			/*if(ins->flags & InstructionFlags::LengthUsesIndex) {
 				length_ms = current_mode->timings[ins->length_ms];
 				// LogDebug("Length from index: {}, {}", ins->length_ms, mode->timings[ins->length_ms]);
-			}
+			}*/
 
 			int len_samples = length_ms / (timestep * 1000);
 
-			//LogDebug("New instruction \"{}\" ({} samples)", ins->name, len_samples);
+			LogDebug("New instruction \"{}\" {}Hz ({}ms, {} samples)", ins->name, ((ins->flags & InstructionFlags::PitchUsesIndex) ? current_mode->frequencies[ins->pitch] : ins->pitch), ins->length_ms, len_samples);
 
 			// increment a new line when we find them
 			if(ins->flags & InstructionFlags::NewLine)
 				cur_y++;
 
 			/*if (ins->flags & InstructionFlags::PitchUsesIndex) {
-				LogDebug("Pitch comes from index: {}, {}", ins->pitch, mode->frequencies[ins->pitch]);
+				LogDebug("Pitch comes from index: {}, {}", ins->pitch, current_mode->frequencies[ins->pitch]);
 			}
 			else if (ins->flags & InstructionFlags::PitchIsDelegated) {
 				LogDebug("Pitch would be delegated");

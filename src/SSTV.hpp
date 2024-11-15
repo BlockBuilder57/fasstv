@@ -45,7 +45,7 @@ namespace fasstv {
 			std::vector<Instruction> instructions_looping;
 		};
 
-		std::vector<Instruction> ROBOT_INSTRUCTIONS = {
+		std::vector<Instruction> ROBOT_4_2_0_INSTRUCTIONS = {
 			{ "(1) Sync pulse",               0, 0, (InstructionFlags)(NewLine | LengthUsesIndex | PitchUsesIndex) },
 			{ "(2) Sync porch",               1, 1, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
 			{ "(3) Y scan",                   2, 0, (InstructionFlags)(LengthUsesIndex | PitchIsDelegated) },
@@ -58,6 +58,18 @@ namespace fasstv {
 			{ "(10) \"Odd\" separator pulse", 3, 3, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
 			{ "(11) Porch",                   4, 2, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
 			{ "(12) B-Y scan",                5, 2, (InstructionFlags)(LengthUsesIndex | PitchIsDelegated) },
+		};
+
+		std::vector<Instruction> ROBOT_4_2_2_INSTRUCTIONS = {
+			{ "(1) Sync pulse",      0, 0, (InstructionFlags)(NewLine | LengthUsesIndex | PitchUsesIndex) },
+			{ "(2) Sync porch",      1, 1, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
+			{ "(3) Y scan",          2, 0, (InstructionFlags)(LengthUsesIndex | PitchIsDelegated) },
+			{ "(4) Separator pulse", 3, 1, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
+			{ "(5) Porch",           4, 2, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
+			{ "(6) R-Y scan",        5, 1, (InstructionFlags)(LengthUsesIndex | PitchIsDelegated) },
+			{ "(7) Separator pulse", 3, 3, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
+			{ "(8) Porch",           4, 2, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
+			{ "(9) B-Y scan",        5, 2, (InstructionFlags)(LengthUsesIndex | PitchIsDelegated) },
 		};
 
 		std::vector<Instruction> ROBOT_MONOCHROME_INSTRUCTIONS = {
@@ -121,27 +133,27 @@ namespace fasstv {
 			// Robot
 			{ "Robot 12", 0,
 			  160, 120, true,
-			  {9.0f, 3.0f, 88.0f, 4.5f, 1.5f, 44.0f}, // sync pulse, sync porch, Y scan, separator pulse, porch, R-Y/B-Y scan
+			  {9.0f, 3.0f, 60.0f, 4.5f, 1.5f, 30.0f}, // sync pulse, sync porch, Y scan, separator pulse, porch, R-Y/B-Y scan
 			  {1200, 1500, 1900, 2300}, // sync pulse, sync porch/even separator pulse, porch, odd separator pulse
-			  &SSTV::ScanYRYBY, 0, ROBOT_INSTRUCTIONS
+			  &SSTV::ScanYRYBY, 0, ROBOT_4_2_0_INSTRUCTIONS
 			},
 			{ "Robot 24", 4,
 			  160, 120, true,
-			  {9.0f, 3.0f, 138.0f, 4.5f, 1.5f, 69.0f}, // sync pulse, sync porch, Y scan, separator pulse, porch, R-Y/B-Y scan
+			  {9.0f, 3.0f, 88.0f, 4.5f, 1.5f, 44.0f}, // sync pulse, sync porch, Y scan, separator pulse, porch, R-Y/B-Y scan
 			  {1200, 1500, 1900, 2300}, // sync pulse, sync porch/even separator pulse, porch, odd separator pulse
-			  &SSTV::ScanYRYBY, 0, ROBOT_INSTRUCTIONS
+			  &SSTV::ScanYRYBY, 0, ROBOT_4_2_2_INSTRUCTIONS
 			},
 			{ "Robot 36", 8,
 			  320, 240, true,
 			  {9.0f, 3.0f, 88.0f, 4.5f, 1.5f, 44.0f}, // sync pulse, sync porch, Y scan, separator pulse, porch, R-Y/B-Y scan
 			  {1200, 1500, 1900, 2300}, // sync pulse, sync porch/even separator pulse, porch, odd separator pulse
-			  &SSTV::ScanYRYBY, 0, ROBOT_INSTRUCTIONS
+			  &SSTV::ScanYRYBY, 0, ROBOT_4_2_0_INSTRUCTIONS
 			},
 			{ "Robot 72", 12,
 			  320, 240, false,
 			  {9.0f, 3.0f, 138.0f, 4.5f, 1.5f, 69.0f}, // sync pulse, sync porch, Y scan, separator pulse, porch, R-Y/B-Y scan
 			  {1200, 1500, 1900, 2300}, // sync pulse, sync porch/even separator pulse, porch, odd separator pulse
-			  &SSTV::ScanYRYBY, 0, ROBOT_INSTRUCTIONS
+			  &SSTV::ScanYRYBY, 0, ROBOT_4_2_2_INSTRUCTIONS
 			},
 			{ "B&W 8", 2,
 			  160, 120, false,
