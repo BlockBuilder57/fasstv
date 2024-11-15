@@ -96,6 +96,15 @@ namespace fasstv {
 		}
 	}
 
+	void SSTV::SetSampleRate(int samplerate) {
+		this->samplerate = samplerate;
+		this->timestep = 1.f / samplerate;
+	}
+
+	void SSTV::SetLetterboxLines(bool b) {
+		letterboxLines = b;
+	}
+
 	void SSTV::SetPixelProvider(fasstv::SSTV::PixelProviderCallback cb) {
 		pixProviderFunc = cb;
 	}
@@ -134,34 +143,7 @@ namespace fasstv {
 		instructions.push_back({"VIS stop",   30,  1200});
 	}
 
-	SDL_Rect CreateLetterbox(int box_width, int box_height, SDL_Rect rect) {
-		SDL_Rect ret {0, 0, box_width, box_height };
-
-		// return early here if letterboxing should be disabled
-		//return ret;
-
-		// get scaling factors for dimensions
-		float aspect_box = box_width / (float)box_height;
-		float aspect_rect = rect.w / (float)rect.h;
-
-		float scalar = aspect_box / aspect_rect;
-
-		if (rect.w > rect.h) {
-			// for when the width is bigger than the height (ie 16:9)
-			ret.h = box_height * scalar;
-			ret.y = ((box_height - ret.h) / 2);
-		}
-		else {
-			// for when the height is bigger than the width (ie 9:16)
-			// i still don't know why the math checks out here, but it does
-			ret.w = box_height * (aspect_box / scalar);
-			ret.x = ((box_width - ret.w) / 2);
-		}
-
-		return ret;
-	}
-
-	std::vector<float> SSTV::DoTheThing(SDL_Rect rect) {
+	std::vector<float> SSTV::RunAllInstructions(SDL_Rect rect) {
 		//if (current_mode == nullptr)
 		//	return;
 
@@ -283,10 +265,12 @@ namespace fasstv {
 		float pitch = 1500.f;
 
 		if(sampled_pixel == nullptr) {
-			bool pattern = ((pos_x + pos_y) / 11) % 2;
+			if (SSTV::The().letterboxLines) {
+				bool pattern = ((pos_x + pos_y) / 11) % 2;
 
-			if(pattern)
-				pitch += 800.f;
+				if(pattern)
+					pitch += 800.f;
+			}
 		} else {
 			// Y = 0.30R + 0.59G + 0.11B
 			pitch = (1500. + (((0.30 * sampled_pixel[0]) + (0.59 * sampled_pixel[1]) + (0.11 * sampled_pixel[2])) * 3.1372549));
@@ -303,11 +287,13 @@ namespace fasstv {
 		int pass = std::clamp((int)ins->pitch, 0, 2); // modes 0-2 correspond to Y/R-Y/B-Y
 
 		if(sampled_pixel == nullptr) {
-			bool pattern = ((pos_x + pos_y) / 11) % 2;
+			if (SSTV::The().letterboxLines) {
+				bool pattern = ((pos_x + pos_y) / 11) % 2;
 
-			// max to R/G to make yellow
-			if(pass != 2 && pattern)
-				pitch += 800.f;
+				// max to R/G to make yellow
+				if(pass != 2 && pattern)
+					pitch += 800.f;
+			}
 		} else {
 			// for bytes - (2300-1500 / 255)
 			// martin is GBR
@@ -326,11 +312,13 @@ namespace fasstv {
 		std::uint8_t B = 0;
 
 		if(sampled_pixel == nullptr) {
-			bool pattern = ((pos_x + pos_y) / 11) % 2;
+			if (SSTV::The().letterboxLines) {
+				bool pattern = ((pos_x + pos_y) / 11) % 2;
 
-			if(pattern) {
-				// yellow
-				R = G = 255;
+				if(pattern) {
+					// yellow
+					R = G = 255;
+				}
 			}
 		} else {
 			R = sampled_pixel[0];

@@ -5,16 +5,16 @@
 #include <array>
 #include <util/Logger.hpp>
 #include <util/Oscillator.hpp>
-#include <SDL3/SDL_rect.h>
+#include <util/SDLExtensions.hpp>
 #include <vector>
 
 namespace fasstv {
 
 	class SSTV {
 	   public:
-		typedef std::uint8_t* (*PixelProviderCallback)(int sample_x, int sample_y);
-
 		static SSTV& The();
+
+		typedef std::uint8_t* (*PixelProviderCallback)(int sample_x, int sample_y);
 
 		enum InstructionFlags : std::uint8_t {
 			ExtraLine        = 0b000001, // for lines that would be considered "extra"
@@ -292,11 +292,14 @@ namespace fasstv {
 		void SetMode(const std::string_view& name);
 		void SetMode(int vis_code);
 		void SetMode(Mode* mode);
+
+		void SetSampleRate(int samplerate);
+		void SetLetterboxLines(bool b);
 		void SetPixelProvider(PixelProviderCallback cb);
 
 		SSTV::Mode* GetMode();
 
-		std::vector<float> DoTheThing(SDL_Rect rect);
+		std::vector<float> RunAllInstructions(SDL_Rect rect);
 
 		static float ScanSweep(Mode* mode, int pos_x, bool invert);
 		static float ScanMonochrome(Instruction* ins, int pos_x, int pos_y, std::uint8_t* sampled_pixel);
@@ -304,11 +307,13 @@ namespace fasstv {
 		static float ScanYRYBY(Instruction* ins, int pos_x, int pos_y, std::uint8_t* sampled_pixel);
 
 	   private:
-		const int samplerate = 44100;
-		const float timestep = 1.f / samplerate;
-
 		void CreateVOXHeader();
 		void CreateVISHeader();
+
+		int samplerate = 44100;
+		float timestep = 1.f / samplerate;
+		bool letterboxLines = false;
+		PixelProviderCallback pixProviderFunc {};
 
 		std::vector<Instruction> instructions {};
 		std::vector<float> samples {};
@@ -318,7 +323,6 @@ namespace fasstv {
 		int cur_x = -1;
 		int cur_y = -1;
 		Oscillator osc { kOsc_Sin };
-		PixelProviderCallback pixProviderFunc {};
 	};
 
 } // namespace fasstv

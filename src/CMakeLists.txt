@@ -1,10 +1,12 @@
 add_executable(fasstv
 		main.cpp
 		util/Logger.cpp
+		util/SDLExtensions.cpp
 		util/StdoutSink.cpp
 		util/Oscillator.cpp
 		SSTV.cpp
 		AudioExport.cpp
+		ImageUtilities.cpp
 		)
 
 fasstv_setup_target(fasstv)
