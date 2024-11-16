@@ -27,6 +27,7 @@ target_link_libraries(fasstv
 		SDL3::SDL3
 		SDL3_image::SDL3_image
 		cargs
+		fftw3
 
 		${FFMPEG_LIBRARIES}
 		)
