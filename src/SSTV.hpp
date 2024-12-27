@@ -175,7 +175,7 @@ namespace fasstv {
 			},
 			{ "B&W 36", 14,
 			  320, 240, false,
-			  {12.0f, 93.0f}, // sync, scan
+			  {12.0f, 138.0f}, // sync, scan
 			  {1200}, // sync
 			  &SSTV::ScanMonochrome, 0, ROBOT_MONOCHROME_INSTRUCTIONS
 			},

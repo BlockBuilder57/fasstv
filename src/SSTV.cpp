@@ -175,15 +175,9 @@ namespace fasstv {
 		while(!instructions.empty()) {
 			Instruction* ins = &instructions[0];
 
-			float length_ms = ins->length_ms;
-			/*if(ins->flags & InstructionFlags::LengthUsesIndex) {
-				length_ms = current_mode->timings[ins->length_ms];
-				// LogDebug("Length from index: {}, {}", ins->length_ms, mode->timings[ins->length_ms]);
-			}*/
+			int len_samples = ins->length_ms / (timestep * 1000);
 
-			int len_samples = length_ms / (timestep * 1000);
-
-			LogDebug("New instruction \"{}\" {}Hz ({}ms, {} samples)", ins->name, ((ins->flags & InstructionFlags::PitchUsesIndex) ? current_mode->frequencies[ins->pitch] : ins->pitch), ins->length_ms, len_samples);
+			//LogDebug("New instruction \"{}\" {}Hz ({}ms, {} samples)", ins->name, ((ins->flags & InstructionFlags::PitchUsesIndex) ? current_mode->frequencies[ins->pitch] : ins->pitch), ins->length_ms, len_samples);
 
 			// increment a new line when we find them
 			if(ins->flags & InstructionFlags::NewLine)
@@ -224,9 +218,9 @@ namespace fasstv {
 						// calculate the sample to take when we're not drawing the letterbox
 						// otherwise, the nullptr is returned and the pattern will be drawn
 						if(!letterbox_sides && !letterbox_tops) {
-							// where we're at along our scanline (remember that height's flipped)
+							// where we're at along our scanline
 							int sample_x = rect.w * (std::max(cur_x - letterbox.x, 0) / (float)letterbox.w);
-							int sample_y = rect.h * (1.f - (std::max(cur_y - letterbox.y, 0) / (float)letterbox.h));
+							int sample_y = rect.h * (std::max(cur_y - letterbox.y, 0) / (float)letterbox.h);
 
 							// get pixel at that sample
 							if (pixProviderFunc != nullptr)

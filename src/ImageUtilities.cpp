@@ -14,15 +14,23 @@ extern "C" {
 
 namespace fasstv {
 
-	SDL_Surface* sampleSurf = {};
+	SDL_Surface* SampleSurface = {};
 	std::uint8_t colorHolder[4] = {};
 	std::uint32_t defaultColor = 0x88888888;
+	std::uint32_t lastSample = -1;
 
 	std::uint8_t* GetSampleFromSurface(int sample_x, int sample_y) {
-		if (sampleSurf == nullptr)
+		if (SampleSurface == nullptr)
 			return reinterpret_cast<std::uint8_t*>(&defaultColor);
 
-		SDL_ReadSurfacePixel(sampleSurf, sample_x, sampleSurf->h - sample_y, &colorHolder[0], &colorHolder[1], &colorHolder[2], &colorHolder[3]);
+		std::uint32_t curSample = sample_x | (sample_y << 16);
+
+		if (curSample != lastSample) {
+			SDL_ReadSurfacePixel(SampleSurface, sample_x, sample_y, &colorHolder[0], &colorHolder[1], &colorHolder[2], &colorHolder[3]);
+			//LogDebug("Sample ({}, {}) read #{:02x}{:02x}{:02x}{:02x}", sample_x, sample_y, colorHolder[0], colorHolder[1], colorHolder[2], colorHolder[3]);
+			lastSample = curSample;
+		}
+
 		return &colorHolder[0];
 	}
 
@@ -67,7 +75,7 @@ namespace fasstv {
 
 		SDL_free(surfConv);
 
-		sampleSurf = surfOut;
+		SampleSurface = surfOut;
 		return surfOut;
 	}
 

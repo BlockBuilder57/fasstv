@@ -55,13 +55,13 @@ int main(int argc, char** argv) {
 	fasstv::LoggerAttachStdout();
 	fasstv::LogDebug("Built {} {}", __DATE__, __TIME__);
 
-	fasstv::LogDebug("{}", SDL_VERSION);
+	/*fasstv::LogDebug("{}", SDL_VERSION);
 	fasstv::LogDebug("{}", SDL_GetRevision());
 
 	if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_CAMERA)) {
 		fasstv::LogError("Couldn't initialize SDL: {}", SDL_GetError());
 		return SDL_APP_FAILURE;
-	}
+	}*/
 
 	fasstv::SSTV& sstv = fasstv::SSTV::The();
 
@@ -117,12 +117,12 @@ int main(int argc, char** argv) {
 		}
 	}
 
-	const int windowDimensions[2] = {1024, 512};
+	/*const int windowDimensions[2] = {1024, 512};
 	SDL_Renderer* renderer;
 	SDL_Window* window;
 	SDL_CreateWindowAndRenderer("fasstv", windowDimensions[0], windowDimensions[1], 0, &window, &renderer);
 	SDL_SetRenderDrawColor(renderer, 0, 0, 0, 0);
-	SDL_RenderClear(renderer);
+	SDL_RenderClear(renderer);*/
 
 	/*int devcount = 0;
 	SDL_CameraID* devices = SDL_GetCameras(&devcount);
@@ -159,13 +159,13 @@ int main(int argc, char** argv) {
 	if (sstv.GetMode() == nullptr)
 		sstv.SetMode("Robot 36");
 
-	// load in image, get proper dimentions
+	// load in image, get proper dimensions
 	fasstv::SSTV::Mode* mode = sstv.GetMode();
-	SDL_Surface* surfOrig = SDL_CreateSurface(256, 256, SDL_PIXELFORMAT_RGBA32);
+	SDL_Surface* surfOrig; //= SDL_CreateSurface(256, 256, SDL_PIXELFORMAT_RGBA32);
 
-	//surfOrig = fasstv::LoadImage(inputPath);
-	//if (surfOrig == nullptr)
-	//	return EXIT_FAILURE;
+	surfOrig = fasstv::LoadImage(inputPath);
+	if (surfOrig == nullptr)
+		return EXIT_FAILURE;
 
 	/*SDL_free(surfOrig);
 	surfOrig = nullptr;
@@ -185,18 +185,18 @@ int main(int argc, char** argv) {
 	SDL_free(surfOrig);
 
 	// do the signal
-	const int samplerate = 48000;
+	const int samplerate = 8000;
 	sstv.SetSampleRate(samplerate);
 	sstv.SetLetterboxLines(false);
 	sstv.SetPixelProvider(&fasstv::GetSampleFromSurface);
 	std::vector<float> samples = sstv.RunAllInstructions({0, 0, surfOut->w, surfOut->h});
 	// turn down
 	for (float& smp : samples)
-		smp *= 0.6f;
+		smp *= 0.2f;
 
 	SDL_free(surfOut);
 
-	/*std::string extension = ".wav";
+	std::string extension = ".wav";
 	if (outputPath.empty()) {
 		outputPath = inputPath;
 		outputPath.replace_filename(inputPath.filename().string() + " " + sstv.GetMode()->name + extension);
@@ -208,10 +208,10 @@ int main(int argc, char** argv) {
 		fasstv::SamplesToWAV(samples, samplerate, file);
 	else
 		fasstv::SamplesToAVCodec(samples, samplerate, file);
-	file.close();*/
+	file.close();
 
 
-	SDL_SetRenderDrawColor(renderer, 80, 80, 80, 255);
+	/*SDL_SetRenderDrawColor(renderer, 80, 80, 80, 255);
 	const int reflines[4] = {1100, 2300, 5, 5};
 	for (int num : reflines) {
 		for (int i = 0; i < 1024; i+=2)
@@ -268,7 +268,7 @@ int main(int argc, char** argv) {
 	while (1) {
 		if (SDL_PollEvent(&event) && event.type == SDL_EVENT_QUIT)
 			break;
-	}
+	}*/
 
 	return EXIT_SUCCESS;
 }
