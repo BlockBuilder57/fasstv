@@ -20,6 +20,7 @@ static struct cag_option options[] = {
 	{ .identifier = 'f', .access_letters = "f", .access_name = "format", .value_name = "<SSTV format|VIS code>", .description = "Specifies SSTV format by name or VIS code." },
 	{ .identifier = 's', .access_letters = nullptr, .access_name = "stretch", .value_name = nullptr, .description = "If specified, stretch to fit." },
 	{ .identifier = 'm', .access_letters = "m", .access_name = "method", .value_name = "<method>", .description = "Scale method (eg. bilinear, bicubic, nearest, etc.)" },
+	{ .identifier = 'p', .access_letters = nullptr, .access_name = "play", .value_name = nullptr, .description = "Whether audio should be played from the executable." },
 	{ .identifier = 'h', .access_letters = "h", .access_name = "help", .value_name = nullptr, .description = "Show help" }
 };
 
@@ -50,18 +51,19 @@ int main(int argc, char** argv) {
 	std::filesystem::path inputPath {};
 	std::filesystem::path outputPath {};
 	bool stretch = false;
+	bool play = false;
 	int resizeFlags = SWS_BICUBIC;
 
 	fasstv::LoggerAttachStdout();
 	fasstv::LogDebug("Built {} {}", __DATE__, __TIME__);
 
-	/*fasstv::LogDebug("{}", SDL_VERSION);
+	fasstv::LogDebug("{}", SDL_VERSION);
 	fasstv::LogDebug("{}", SDL_GetRevision());
 
-	if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_CAMERA)) {
+	if (!SDL_Init(SDL_INIT_AUDIO | SDL_INIT_VIDEO /*| SDL_INIT_CAMERA*/)) {
 		fasstv::LogError("Couldn't initialize SDL: {}", SDL_GetError());
 		return SDL_APP_FAILURE;
-	}*/
+	}
 
 	fasstv::SSTV& sstv = fasstv::SSTV::The();
 
@@ -106,6 +108,10 @@ int main(int argc, char** argv) {
 				}
 				break;
 			}
+			case 'p': {
+				play = true;
+				break;
+			}
 			case 'h':
 				printf("Usage: fasstv [OPTIONS]...\n");
 				printf("Quickly converts an image file into a valid SSTV signal.\n\n");
@@ -121,13 +127,33 @@ int main(int argc, char** argv) {
 	SDL_Renderer* renderer;
 	SDL_Window* window;
 	SDL_CreateWindowAndRenderer("fasstv", windowDimensions[0], windowDimensions[1], 0, &window, &renderer);
-	SDL_SetRenderDrawColor(renderer, 0, 0, 0, 0);
+	SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
 	SDL_RenderClear(renderer);*/
+
+	SDL_AudioStream* stream = nullptr;
+
+	if (play) {
+		SDL_AudioSpec spec {
+			.format = SDL_AUDIO_F32,
+			.channels = 1,
+			.freq = 8000
+		};
+
+		stream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, nullptr, nullptr);
+		if (!stream) {
+			fasstv::LogError("Couldn't create audio stream: {}", SDL_GetError());
+			return SDL_APP_FAILURE;
+		}
+
+		fasstv::LogDebug("Trying to use {}", SDL_GetAudioDeviceName(SDL_GetAudioStreamDevice(stream)));
+
+		SDL_ResumeAudioStreamDevice(stream);
+	}
 
 	/*int devcount = 0;
 	SDL_CameraID* devices = SDL_GetCameras(&devcount);
 	if (devices == NULL) {
-		fasstv::LogError("Couldn't enumerate camera devices: %s", SDL_GetError());
+		fasstv::LogError("Couldn't enumerate camera devices: {}", SDL_GetError());
 		return SDL_APP_FAILURE;
 	} else if (devcount == 0) {
 		fasstv::LogError("Couldn't find any camera devices! Please connect a camera and try again.");
@@ -144,15 +170,16 @@ int main(int argc, char** argv) {
 	SDL_CameraSpec** camFormats = SDL_GetCameraSupportedFormats(camId, &formatCount);
 	for (int i = 0; i < formatCount; i++) {
 		SDL_CameraSpec* pSpec = camFormats[i];
-		//if (pSpec->width == 1920 && pSpec->framerate_numerator == 30 && pSpec->format == SDL_PIXELFORMAT_BGR24) {
+		SDL_Log("Cam %d Mode %d: %dx%d @ %d/%d - %s", camId, i, pSpec->width, pSpec->height, pSpec->framerate_numerator, pSpec->framerate_denominator, SDL_GetPixelFormatName(pSpec->format));
+		if (pSpec->framerate_numerator == 30) {
 			SDL_Log("Trying this one");
 			memcpy(&desiredSpec, pSpec, sizeof(SDL_CameraSpec));
 			break;
-		//}
-		SDL_Log("Cam %d Mode %d: %dx%d @ %d/%d - %s", camId, i, pSpec->width, pSpec->height, pSpec->framerate_numerator, pSpec->framerate_denominator, SDL_GetPixelFormatName(pSpec->format));
+		}
+
 	}
 
-	SDL_Camera* cam = SDL_OpenCamera(camId, &desiredSpec);
+	SDL_Camera* cam = SDL_OpenCamera(camId, nullptr);
 	SDL_free(devices);*/
 
 	// fallback to Robot 36 if no mode set
@@ -167,8 +194,8 @@ int main(int argc, char** argv) {
 	if (surfOrig == nullptr)
 		return EXIT_FAILURE;
 
-	/*SDL_free(surfOrig);
-	surfOrig = nullptr;
+	//SDL_free(surfOrig);
+	/*surfOrig = nullptr;
 	Uint64 timestampNS;
 	while (surfOrig == nullptr)
 		surfOrig = SDL_AcquireCameraFrame(cam, &timestampNS);*/
@@ -190,46 +217,29 @@ int main(int argc, char** argv) {
 	sstv.SetLetterboxLines(false);
 	sstv.SetPixelProvider(&fasstv::GetSampleFromSurface);
 
-	// one-shot
-	//std::vector<float> samples = sstv.RunAllInstructions({0, 0, surfOut->w, surfOut->h});
+	if (!outputPath.empty()) {
+		// one-shot
+		std::vector<float> samples;
+		samples = sstv.RunAllInstructions({0, 0, surfOut->w, surfOut->h});
+		// turn down
+		for (float& smp : samples)
+			smp *= 0.33f;
 
-	// pump processing
-	const size_t buff_size = 320;
-	auto* buff = new float[buff_size];
-	std::vector<float> samples {};
+		// for automatic file naming
+		/*std::string extension = ".wav";
+		if (outputPath.empty()) {
+			outputPath = inputPath;
+			outputPath.replace_filename(inputPath.filename().string() + " " + sstv.GetMode()->name + extension);
+		}*/
 
-	sstv.ResetInstructionProcessing();
-
-	while (!sstv.IsProcessingDone()) {
-		sstv.PumpInstructionProcessing(&buff[0], buff_size, {0, 0, surfOut->w, surfOut->h});
-		samples.insert(samples.end(), &buff[0], &buff[0] + buff_size);
-
-		/*std::int32_t cur_x, cur_y;
-		std::uint32_t cur_sample, length_in_samples;
-		sstv.GetState(&cur_x, &cur_y, &cur_sample, &length_in_samples);
-		fasstv::LogDebug("Progress: {:.2f}%", (cur_sample / (float)length_in_samples) * 100.f);*/
+		fasstv::LogInfo("Saving \"{}\"...", outputPath.filename().c_str());
+		std::ofstream file(outputPath.string(), std::ios::binary);
+		if (outputPath.extension() == ".wav")
+			fasstv::SamplesToWAV(samples, samplerate, file);
+		else
+			fasstv::SamplesToAVCodec(samples, samplerate, file);
+		file.close();
 	}
-
-	SDL_free(surfOut);
-
-	// turn down
-	for (float& smp : samples)
-		smp *= 0.2f;
-
-	std::string extension = ".wav";
-	if (outputPath.empty()) {
-		outputPath = inputPath;
-		outputPath.replace_filename(inputPath.filename().string() + " " + sstv.GetMode()->name + extension);
-	}
-
-	fasstv::LogInfo("Saving \"{}\"...", outputPath.filename().c_str());
-	std::ofstream file(outputPath.string(), std::ios::binary);
-	if (outputPath.extension() == ".wav")
-		fasstv::SamplesToWAV(samples, samplerate, file);
-	else
-		fasstv::SamplesToAVCodec(samples, samplerate, file);
-	file.close();
-
 
 	/*SDL_SetRenderDrawColor(renderer, 80, 80, 80, 255);
 	const int reflines[4] = {1100, 2300, 5, 5};
@@ -282,13 +292,71 @@ int main(int argc, char** argv) {
 	}
 
 	fftw_destroy_plan(p);
-	fftw_free(out);
+	fftw_free(out);*/
+
+	const size_t buff_size = 320;
+	static float buff[buff_size];
+	sstv.ResetInstructionProcessing();
 
 	SDL_Event event;
-	while (1) {
-		if (SDL_PollEvent(&event) && event.type == SDL_EVENT_QUIT)
-			break;
-	}*/
+	bool run = true;
 
+	//SDL_Surface *surfFrame = nullptr, *surfOut = nullptr;
+	//Uint64 timestampNS;
+
+	while (run) {
+		SDL_PollEvent(&event);
+		switch (event.type) {
+			case SDL_EVENT_QUIT:
+				run = false;
+				break;
+		}
+
+		/*SDL_Surface* surfTemp = SDL_AcquireCameraFrame(cam, &timestampNS);
+		if (surfTemp) {
+			fasstv::LogDebug("Got a new frame?");
+			surfFrame = surfTemp;
+		}
+
+		if (surfFrame) {
+			SDL_Rect letterbox = fasstv::CreateLetterbox(mode->width, mode->lines, {0, 0, surfFrame->w, surfFrame->h});
+
+			if (surfOut) {
+				SDL_free(surfOut);
+				surfOut = nullptr;
+			}
+
+			if (!stretch)
+				surfOut = fasstv::RescaleImage(surfFrame, letterbox.w, letterbox.h, resizeFlags);
+			else
+				surfOut = fasstv::RescaleImage(surfFrame, mode->width, mode->lines, resizeFlags);
+
+			SDL_free(surfFrame);
+		}*/
+
+		if (stream != nullptr) {
+			const int minimum_audio = samplerate;
+			if (SDL_GetAudioStreamAvailable(stream) < minimum_audio) {
+				if (!sstv.IsProcessingDone() && surfOut != nullptr) {
+					sstv.PumpInstructionProcessing(&buff[0], buff_size, {0, 0, surfOut->w, surfOut->h});
+					for (float& smp : buff)
+						smp *= 0.33f;
+					SDL_PutAudioStreamData(stream, buff, sizeof (buff));
+
+					/*std::int32_t cur_x, cur_y;
+					std::uint32_t cur_sample, length_in_samples;
+					sstv.GetState(&cur_x, &cur_y, &cur_sample, &length_in_samples);
+					fasstv::LogDebug("Progress: {:.2f}%", (cur_sample / (float)length_in_samples) * 100.f);*/
+				}
+				else {
+					run = false;
+				}
+			}
+		}
+	}
+
+	SDL_free(surfOut);
+
+	SDL_Quit();
 	return EXIT_SUCCESS;
 }

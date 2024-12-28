@@ -188,7 +188,7 @@ namespace fasstv {
 
 		int len_samples = current_instruction->length_ms / (timestep * 1000);
 
-		//LogDebug("New instruction \"{}\" {}Hz ({}ms, {} samples)", current_instruction->name, ((current_instruction->flags & InstructionFlags::PitchUsesIndex) ? current_mode->frequencies[current_instruction->pitch] : current_instruction->pitch), current_instruction->length_ms, len_samples);
+		LogDebug("New instruction \"{}\" {}Hz ({}ms, {} samples)", current_instruction->name, ((current_instruction->flags & InstructionFlags::PitchUsesIndex) ? current_mode->frequencies[current_instruction->pitch] : current_instruction->pitch), current_instruction->length_ms, len_samples);
 
 		// increment a new line when we find them
 		if(current_instruction->flags & InstructionFlags::NewLine)
@@ -269,6 +269,7 @@ namespace fasstv {
 
 	void SSTV::ResetInstructionProcessing() {
 		cur_sample = 0;
+		last_instruction_sample = 0;
 		phase = 0;
 		cur_x = cur_y = 0;
 
@@ -302,6 +303,7 @@ namespace fasstv {
 		//if (current_mode == nullptr)
 		//	return;
 
+		last_instruction_sample = 0;
 		phase = 0;
 
 		SDL_Rect letterbox = CreateLetterbox(current_mode->width, current_mode->lines, rect);
