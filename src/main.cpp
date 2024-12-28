@@ -189,12 +189,32 @@ int main(int argc, char** argv) {
 	sstv.SetSampleRate(samplerate);
 	sstv.SetLetterboxLines(false);
 	sstv.SetPixelProvider(&fasstv::GetSampleFromSurface);
-	std::vector<float> samples = sstv.RunAllInstructions({0, 0, surfOut->w, surfOut->h});
+
+	// one-shot
+	//std::vector<float> samples = sstv.RunAllInstructions({0, 0, surfOut->w, surfOut->h});
+
+	// pump processing
+	const size_t buff_size = 320;
+	auto* buff = new float[buff_size];
+	std::vector<float> samples {};
+
+	sstv.ResetInstructionProcessing();
+
+	while (!sstv.IsProcessingDone()) {
+		sstv.PumpInstructionProcessing(&buff[0], buff_size, {0, 0, surfOut->w, surfOut->h});
+		samples.insert(samples.end(), &buff[0], &buff[0] + buff_size);
+
+		/*std::int32_t cur_x, cur_y;
+		std::uint32_t cur_sample, length_in_samples;
+		sstv.GetState(&cur_x, &cur_y, &cur_sample, &length_in_samples);
+		fasstv::LogDebug("Progress: {:.2f}%", (cur_sample / (float)length_in_samples) * 100.f);*/
+	}
+
+	SDL_free(surfOut);
+
 	// turn down
 	for (float& smp : samples)
 		smp *= 0.2f;
-
-	SDL_free(surfOut);
 
 	std::string extension = ".wav";
 	if (outputPath.empty()) {

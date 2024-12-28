@@ -138,7 +138,7 @@ namespace fasstv {
 			  &SSTV::ScanYRYBY, 0, ROBOT_4_2_0_INSTRUCTIONS
 			},
 			{ "Robot 24", 4,
-			  160, 120, true,
+			  160, 120, false,
 			  {9.0f, 3.0f, 88.0f, 4.5f, 1.5f, 44.0f}, // sync pulse, sync porch, Y scan, separator pulse, porch, R-Y/B-Y scan
 			  {1200, 1500, 1900, 2300}, // sync pulse, sync porch/even separator pulse, porch, odd separator pulse
 			  &SSTV::ScanYRYBY, 0, ROBOT_4_2_2_INSTRUCTIONS
@@ -308,9 +308,15 @@ namespace fasstv {
 		void SetSampleRate(int samplerate);
 		void SetLetterboxLines(bool b);
 		void SetPixelProvider(PixelProviderCallback cb);
+		void SetInstructionFlagMask(SSTV::InstructionFlags flags, bool invert);
 
 		SSTV::Mode* GetMode();
+		void GetState(std::int32_t* cur_x, std::int32_t* cur_y, std::uint32_t* cur_sample, std::uint32_t* length_in_samples);
 
+		bool IsProcessingDone() const { return last_instruction_sample >= estimated_length_in_samples; }
+
+		void ResetInstructionProcessing();
+		void PumpInstructionProcessing(float* arr, size_t arr_size, SDL_Rect rect);
 		std::vector<float> RunAllInstructions(SDL_Rect rect);
 
 		static float ScanSweep(Mode* mode, int pos_x, bool invert);
@@ -321,20 +327,28 @@ namespace fasstv {
 	   private:
 		void CreateVOXHeader();
 		void CreateVISHeader();
+		bool GetNextInstruction();
+		float GetSamplePitch(SDL_Rect rect, SDL_Rect letterbox);
 
-		int samplerate = 44100;
+		std::uint32_t samplerate = 44100;
 		float timestep = 1.f / samplerate;
+		std::uint32_t estimated_length_in_samples = 0;
 		bool letterboxLines = false;
+		bool flag_mask_invert = false;
+		InstructionFlags flag_mask {};
 		PixelProviderCallback pixProviderFunc {};
+
+		Mode* current_mode = nullptr;
+		Instruction* current_instruction = nullptr;
+		Oscillator osc { kOsc_Sin };
+		float phase = 0;
 
 		std::vector<Instruction> instructions {};
 		std::vector<float> samples {};
-		Mode* current_mode = nullptr;
-		float current_time = 0;
-		float phase = 0;
-		int cur_x = -1;
-		int cur_y = -1;
-		Oscillator osc { kOsc_Sin };
+		std::int32_t cur_x = -1;
+		std::int32_t cur_y = -1;
+		std::uint32_t cur_sample = 0;
+		std::uint32_t last_instruction_sample = 0;
 	};
 
 } // namespace fasstv

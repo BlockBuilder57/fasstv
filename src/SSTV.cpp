@@ -106,12 +106,19 @@ namespace fasstv {
 			ins.length_ms = length_ms;
 			totalLength_ms += length_ms;
 		}
+
 		LogDebug("Mode has length: {}s", totalLength_ms / 1000.f);
 	}
 
 	void SSTV::SetSampleRate(int samplerate) {
 		this->samplerate = samplerate;
 		this->timestep = 1.f / samplerate;
+
+		float totalLength_ms = 0.0f;
+		for (auto& ins : instructions)
+			totalLength_ms += ins.length_ms;
+
+		estimated_length_in_samples = ((totalLength_ms * samplerate) / 1000.f);
 	}
 
 	void SSTV::SetLetterboxLines(bool b) {
@@ -122,8 +129,24 @@ namespace fasstv {
 		pixProviderFunc = cb;
 	}
 
+	void SSTV::SetInstructionFlagMask(SSTV::InstructionFlags flags, bool invert) {
+		flag_mask = flags;
+		flag_mask_invert = invert;
+	}
+
 	SSTV::Mode* SSTV::GetMode() {
 		return current_mode;
+	}
+
+	void SSTV::GetState(std::int32_t* cur_x, std::int32_t* cur_y, std::uint32_t* cur_sample, std::uint32_t* length_in_samples) {
+		if (cur_x)
+			*cur_x = this->cur_x;
+		if (cur_y)
+			*cur_y = this->cur_y;
+		if (cur_sample)
+			*cur_sample = this->cur_sample;
+		if (length_in_samples)
+			*length_in_samples = this->estimated_length_in_samples;
 	}
 
 	void SSTV::CreateVOXHeader() {
@@ -156,11 +179,129 @@ namespace fasstv {
 		instructions.push_back({"VIS stop",   30,  1200});
 	}
 
+	bool SSTV::GetNextInstruction() {
+		last_instruction_sample = cur_sample;
+
+		if (current_instruction >= instructions.end().base() - 1)
+			return false;
+		current_instruction++;
+
+		int len_samples = current_instruction->length_ms / (timestep * 1000);
+
+		//LogDebug("New instruction \"{}\" {}Hz ({}ms, {} samples)", current_instruction->name, ((current_instruction->flags & InstructionFlags::PitchUsesIndex) ? current_mode->frequencies[current_instruction->pitch] : current_instruction->pitch), current_instruction->length_ms, len_samples);
+
+		// increment a new line when we find them
+		if(current_instruction->flags & InstructionFlags::NewLine)
+			cur_y++;
+
+		/*if (current_instruction->flags & InstructionFlags::PitchUsesIndex) {
+			LogDebug("Pitch comes from index: {}, {}", current_instruction->pitch, current_mode->frequencies[current_instruction->pitch]);
+		}
+		else if (current_instruction->flags & InstructionFlags::PitchIsDelegated) {
+			LogDebug("Pitch would be delegated");
+		}
+		else {
+			LogDebug("Pitch is {}", current_instruction->pitch);
+		}*/
+
+		return true;
+	}
+
+	float SSTV::GetSamplePitch(SDL_Rect rect, SDL_Rect letterbox) {
+		// by default, just use the value
+		float pitch = current_instruction->pitch;
+
+		if(current_instruction->flags & InstructionFlags::PitchUsesIndex) {
+			// take the pitch from an index
+			pitch = current_mode->frequencies[current_instruction->pitch];
+		} else if(current_instruction->flags & InstructionFlags::PitchIsSweep) {
+			pitch = ScanSweep(current_mode, cur_x, true);
+		} else if(current_instruction->flags & InstructionFlags::PitchIsDelegated) {
+			// we're about to do a new scan, delegate it
+
+			if(current_mode->func_scan_handler != nullptr) {
+				// calculate the letterbox
+				bool letterbox_sides = letterbox.x > 0 && (cur_x < letterbox.x || cur_x >= letterbox.x + letterbox.w);
+				bool letterbox_tops = letterbox.y > 0 && (cur_y < letterbox.y || cur_y >= letterbox.y + letterbox.h);
+
+				std::uint8_t* pixel = nullptr;
+
+				// calculate the sample to take when we're not drawing the letterbox
+				// otherwise, the nullptr is returned and the pattern will be drawn
+				if(!letterbox_sides && !letterbox_tops) {
+					// where we're at along our scanline
+					int sample_x = rect.w * (std::max(cur_x - letterbox.x, 0) / (float)letterbox.w);
+					int sample_y = rect.h * (std::max(cur_y - letterbox.y, 0) / (float)letterbox.h);
+
+					// get pixel at that sample
+					if (pixProviderFunc != nullptr)
+						pixel = pixProviderFunc(sample_x, sample_y);
+					else
+						LogError("Pixel provider is null!!!");
+				}
+
+				pitch = current_mode->func_scan_handler(current_instruction, cur_x, cur_y, pixel);
+			} else {
+				LogError("Mode {} has delegated pitch with no scan handler", current_mode->name);
+				pitch = 1500.f;
+			}
+		}
+
+		if (flag_mask) {
+			bool passes = current_instruction->flags & flag_mask;
+			if (flag_mask_invert)
+				passes = !passes;
+			if (passes)
+				return 0.0f;
+		}
+
+		// we need to see how the phase will increase for the frequency we want
+		// this is where the smooth pitch changes happen
+		phase += Oscillator::GetPhaseInc(pitch, samplerate);
+		if(phase == INFINITY)
+			LogError("Fug");
+		else
+			while(phase > FTWO_PI * 2)
+				phase -= FTWO_PI * 2;
+
+		return osc.Value(phase);
+	}
+
+	void SSTV::ResetInstructionProcessing() {
+		cur_sample = 0;
+		phase = 0;
+		cur_x = cur_y = 0;
+
+		current_instruction = instructions.data();
+	}
+
+	void SSTV::PumpInstructionProcessing(float* arr, size_t arr_size, SDL_Rect rect) {
+		SDL_Rect letterbox = CreateLetterbox(current_mode->width, current_mode->lines, rect);
+
+		for(int i = 0; i < arr_size; i++) {
+			int len_samples = current_instruction->length_ms / (timestep * 1000);
+
+			if (cur_sample >= last_instruction_sample + len_samples) {
+				if (!GetNextInstruction())
+					break;
+
+				// recalculate len_samples
+				len_samples = current_instruction->length_ms / (timestep * 1000);
+			}
+
+			float widthfrac = ((float)(cur_sample - last_instruction_sample) / len_samples);
+			cur_x = current_mode->width * widthfrac;
+
+			arr[i] = GetSamplePitch(rect, letterbox);
+
+			cur_sample++;
+		}
+	}
+
 	std::vector<float> SSTV::RunAllInstructions(SDL_Rect rect) {
 		//if (current_mode == nullptr)
 		//	return;
 
-		current_time = 0;
 		phase = 0;
 
 		SDL_Rect letterbox = CreateLetterbox(current_mode->width, current_mode->lines, rect);
@@ -171,86 +312,23 @@ namespace fasstv {
 
 		cur_x = -1;
 		cur_y = -1;
+		current_instruction = instructions.data();
 
-		while(!instructions.empty()) {
-			Instruction* ins = &instructions[0];
-
-			int len_samples = ins->length_ms / (timestep * 1000);
-
-			//LogDebug("New instruction \"{}\" {}Hz ({}ms, {} samples)", ins->name, ((ins->flags & InstructionFlags::PitchUsesIndex) ? current_mode->frequencies[ins->pitch] : ins->pitch), ins->length_ms, len_samples);
-
-			// increment a new line when we find them
-			if(ins->flags & InstructionFlags::NewLine)
-				cur_y++;
-
-			/*if (ins->flags & InstructionFlags::PitchUsesIndex) {
-				LogDebug("Pitch comes from index: {}, {}", ins->pitch, current_mode->frequencies[ins->pitch]);
-			}
-			else if (ins->flags & InstructionFlags::PitchIsDelegated) {
-				LogDebug("Pitch would be delegated");
-			}
-			else {
-				LogDebug("Pitch is {}", ins->pitch);
-			}*/
+		while(current_instruction < instructions.end().base()) {
+			int len_samples = current_instruction->length_ms / (timestep * 1000);
 
 			for(int i = 0; i < len_samples; i++) {
 				float widthfrac = ((float)i / len_samples);
 				cur_x = current_mode->width * widthfrac;
 
-				// by default, just use the value
-				float pitch = ins->pitch;
-
-				if(ins->flags & InstructionFlags::PitchUsesIndex) {
-					// take the pitch from an index
-					pitch = current_mode->frequencies[ins->pitch];
-				} else if(ins->flags & InstructionFlags::PitchIsSweep) {
-					pitch = ScanSweep(current_mode, cur_x, true);
-				} else if(ins->flags & InstructionFlags::PitchIsDelegated) {
-					// we're about to do a new scan, delegate it
-
-					if(current_mode->func_scan_handler != nullptr) {
-						// calculate the letterbox
-						bool letterbox_sides = letterbox.x > 0 && (cur_x < letterbox.x || cur_x >= letterbox.x + letterbox.w);
-						bool letterbox_tops = letterbox.y > 0 && (cur_y < letterbox.y || cur_y >= letterbox.y + letterbox.h);
-
-						std::uint8_t* pixel = nullptr;
-
-						// calculate the sample to take when we're not drawing the letterbox
-						// otherwise, the nullptr is returned and the pattern will be drawn
-						if(!letterbox_sides && !letterbox_tops) {
-							// where we're at along our scanline
-							int sample_x = rect.w * (std::max(cur_x - letterbox.x, 0) / (float)letterbox.w);
-							int sample_y = rect.h * (std::max(cur_y - letterbox.y, 0) / (float)letterbox.h);
-
-							// get pixel at that sample
-							if (pixProviderFunc != nullptr)
-								pixel = pixProviderFunc(sample_x, sample_y);
-							else
-								LogError("Pixel provider is null!!!");
-						}
-
-						pitch = current_mode->func_scan_handler(ins, cur_x, cur_y, pixel);
-					} else {
-						LogError("Mode {} has delegated pitch with no scan handler", current_mode->name);
-						pitch = 1500.f;
-					}
-				}
-
-				// we need to see how the phase will increase for the frequency we want
-				// this is where the smooth pitch changes happen
-				phase += Oscillator::GetPhaseInc(pitch, samplerate);
-				if(phase == INFINITY)
-					LogError("Fug");
-				else
-					while(phase > FTWO_PI * 2)
-						phase -= FTWO_PI * 2;
-
 				// add to the list of samples
-				samples.push_back(osc.Value(phase));
+				samples.push_back(GetSamplePitch(rect, letterbox));
+				cur_sample++;
 			}
 
-			// remove this instruction
-			instructions.erase(instructions.begin());
+			// go to next instruction
+			if (!GetNextInstruction())
+				break;
 		}
 
 		return samples;
