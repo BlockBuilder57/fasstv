@@ -327,6 +327,7 @@ namespace fasstv {
 	   private:
 		void CreateVOXHeader();
 		void CreateVISHeader();
+		void CreateFooter();
 		bool GetNextInstruction();
 		float GetSamplePitch(SDL_Rect rect, SDL_Rect letterbox);
 

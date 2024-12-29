@@ -31,6 +31,10 @@ namespace fasstv {
 			lastSample = curSample;
 		}
 
+		// lazy alpha application
+		for (int i = 0; i < 3; i++)
+			colorHolder[i] *= (colorHolder[3] / 255.f);
+
 		return &colorHolder[0];
 	}
 

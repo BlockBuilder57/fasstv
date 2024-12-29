@@ -95,6 +95,8 @@ namespace fasstv {
 			}
 		}
 
+		CreateFooter();
+
 		// Set instruction length ahead of time
 		float totalLength_ms = 0.0f;
 		for (auto& ins : instructions) {
@@ -177,6 +179,16 @@ namespace fasstv {
 		}
 		instructions.push_back({"VIS parity", 30, parity ? 1100.f : 1300.f});
 		instructions.push_back({"VIS stop",   30,  1200});
+	}
+
+	void SSTV::CreateFooter() {
+		// I've got no clue if this is right. I could barely find information
+		// on the VOX tones, and none about this. If I understand it right,
+		// this may just be an MMSSTV feature?
+		instructions.push_back({"Footer 1", 100, 1900});
+		instructions.push_back({"Footer 2", 100, 1500});
+		instructions.push_back({"Footer 3", 100, 1900});
+		instructions.push_back({"Footer 4", 100, 1500});
 	}
 
 	bool SSTV::GetNextInstruction() {
