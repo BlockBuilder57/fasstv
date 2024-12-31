@@ -219,7 +219,7 @@ namespace fasstv {
 		return true;
 	}
 
-	float SSTV::GetSamplePitch(SDL_Rect rect, SDL_Rect letterbox) {
+	float SSTV::GetSamplePitch(Rect rect, Rect letterbox) {
 		// by default, just use the value
 		float pitch = current_instruction->pitch;
 
@@ -236,6 +236,7 @@ namespace fasstv {
 				bool letterbox_sides = letterbox.x > 0 && (cur_x < letterbox.x || cur_x >= letterbox.x + letterbox.w);
 				bool letterbox_tops = letterbox.y > 0 && (cur_y < letterbox.y || cur_y >= letterbox.y + letterbox.h);
 
+				// RGBA8888 pixel
 				std::uint8_t* pixel = nullptr;
 
 				// calculate the sample to take when we're not drawing the letterbox
@@ -269,14 +270,9 @@ namespace fasstv {
 
 		// we need to see how the phase will increase for the frequency we want
 		// this is where the smooth pitch changes happen
-		phase += Oscillator::GetPhaseInc(pitch, samplerate);
-		if(phase == INFINITY)
-			LogError("Fug");
-		else
-			while(phase > FTWO_PI * 2)
-				phase -= FTWO_PI * 2;
-
-		return osc.Value(phase);
+		phase += pitch * ((M_PIf * 2.0f) / samplerate);
+		phase = fmod(phase, (M_PIf * 2.0f));
+		return sin(phase);
 	}
 
 	void SSTV::ResetInstructionProcessing() {
@@ -288,8 +284,8 @@ namespace fasstv {
 		current_instruction = instructions.data();
 	}
 
-	void SSTV::PumpInstructionProcessing(float* arr, size_t arr_size, SDL_Rect rect) {
-		SDL_Rect letterbox = CreateLetterbox(current_mode->width, current_mode->lines, rect);
+	void SSTV::PumpInstructionProcessing(float* arr, size_t arr_size, Rect rect) {
+		Rect letterbox = Rect::CreateLetterbox(current_mode->width, current_mode->lines, rect);
 
 		for(int i = 0; i < arr_size; i++) {
 			int len_samples = current_instruction->length_ms / (timestep * 1000);
@@ -311,14 +307,14 @@ namespace fasstv {
 		}
 	}
 
-	std::vector<float> SSTV::RunAllInstructions(SDL_Rect rect) {
+	std::vector<float> SSTV::RunAllInstructions(Rect rect) {
 		//if (current_mode == nullptr)
 		//	return;
 
 		last_instruction_sample = 0;
 		phase = 0;
 
-		SDL_Rect letterbox = CreateLetterbox(current_mode->width, current_mode->lines, rect);
+		Rect letterbox = Rect::CreateLetterbox(current_mode->width, current_mode->lines, rect);
 
 		// sampling helpers for sampling the screen
 		// do it all right now to save time!

@@ -1,6 +1,7 @@
 // Created by block on 11/12/24.
 
 #include <util/Logger.hpp>
+#include <util/Rect.hpp>
 #include <util/StdoutSink.hpp>
 #include <AudioExport.hpp>
 #include <ImageUtilities.hpp>
@@ -34,6 +35,7 @@ static struct ScaleMethod ScaleMethods[] = {
 	{"Bicubic", SWS_BICUBIC},
 	{"X", SWS_X},
 	{"Nearest", SWS_POINT},
+	{"Point", SWS_POINT},
 	{"Area", SWS_AREA},
 	{"BicubicLinear", SWS_BICUBLIN},
 	{"Gauss", SWS_GAUSS},
@@ -200,7 +202,7 @@ int main(int argc, char** argv) {
 	while (surfOrig == nullptr)
 		surfOrig = SDL_AcquireCameraFrame(cam, &timestampNS);*/
 
-	SDL_Rect letterbox = fasstv::CreateLetterbox(mode->width, mode->lines, {0, 0, surfOrig->w, surfOrig->h});
+	fasstv::Rect letterbox = fasstv::Rect::CreateLetterbox(mode->width, mode->lines, {0, 0, surfOrig->w, surfOrig->h});
 
 	SDL_Surface* surfOut;
 
@@ -319,7 +321,7 @@ int main(int argc, char** argv) {
 		}
 
 		if (surfFrame) {
-			SDL_Rect letterbox = fasstv::CreateLetterbox(mode->width, mode->lines, {0, 0, surfFrame->w, surfFrame->h});
+			fasstv::Rect letterbox = fasstv::Rect::CreateLetterbox(mode->width, mode->lines, {0, 0, surfFrame->w, surfFrame->h});
 
 			if (surfOut) {
 				SDL_free(surfOut);

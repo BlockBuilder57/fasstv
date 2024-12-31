@@ -1,14 +1,13 @@
-// Created by block on 2024-11-14.
+// Created by block on 2024-11-12.
 
-#include "SDLExtensions.hpp"
+#include "Rect.hpp"
 
 namespace fasstv {
-
-	SDL_Rect CreateLetterbox(int box_width, int box_height, SDL_Rect rect) {
-		SDL_Rect ret { 0, 0, box_width, box_height };
+	Rect Rect::CreateLetterbox(int box_width, int box_height, Rect rect) {
+		Rect ret { 0, 0, box_width, box_height };
 
 		// return early here if letterboxing should be disabled
-		//return ret;
+		// return ret;
 
 		// get scaling factors for dimensions
 		float aspect_box = box_width / (float)box_height;
@@ -29,5 +28,4 @@ namespace fasstv {
 
 		return ret;
 	}
-
 } // namespace fasstv

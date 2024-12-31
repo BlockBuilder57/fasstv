@@ -4,8 +4,7 @@
 
 #include <array>
 #include <util/Logger.hpp>
-#include <util/Oscillator.hpp>
-#include <util/SDLExtensions.hpp>
+#include <util/Rect.hpp>
 #include <vector>
 
 namespace fasstv {
@@ -306,6 +305,7 @@ namespace fasstv {
 		void SetMode(Mode* mode);
 
 		void SetSampleRate(int samplerate);
+		void SetLetterboxRect(Rect rect);
 		void SetLetterboxLines(bool b);
 		void SetPixelProvider(PixelProviderCallback cb);
 		void SetInstructionFlagMask(SSTV::InstructionFlags flags, bool invert);
@@ -316,8 +316,8 @@ namespace fasstv {
 		bool IsProcessingDone() const { return last_instruction_sample >= estimated_length_in_samples; }
 
 		void ResetInstructionProcessing();
-		void PumpInstructionProcessing(float* arr, size_t arr_size, SDL_Rect rect);
-		std::vector<float> RunAllInstructions(SDL_Rect rect);
+		void PumpInstructionProcessing(float* arr, size_t arr_size, Rect rect);
+		std::vector<float> RunAllInstructions(Rect rect);
 
 		static float ScanSweep(Mode* mode, int pos_x, bool invert);
 		static float ScanMonochrome(Instruction* ins, int pos_x, int pos_y, std::uint8_t* sampled_pixel);
@@ -329,19 +329,14 @@ namespace fasstv {
 		void CreateVISHeader();
 		void CreateFooter();
 		bool GetNextInstruction();
-		float GetSamplePitch(SDL_Rect rect, SDL_Rect letterbox);
+		float GetSamplePitch(Rect rect, Rect letterbox);
 
 		std::uint32_t samplerate = 44100;
 		float timestep = 1.f / samplerate;
 		std::uint32_t estimated_length_in_samples = 0;
-		bool letterboxLines = false;
-		bool flag_mask_invert = false;
-		InstructionFlags flag_mask {};
-		PixelProviderCallback pixProviderFunc {};
 
 		Mode* current_mode = nullptr;
 		Instruction* current_instruction = nullptr;
-		Oscillator osc { kOsc_Sin };
 		float phase = 0;
 
 		std::vector<Instruction> instructions {};
@@ -350,6 +345,11 @@ namespace fasstv {
 		std::int32_t cur_y = -1;
 		std::uint32_t cur_sample = 0;
 		std::uint32_t last_instruction_sample = 0;
+
+		bool letterboxLines = false;
+		bool flag_mask_invert = false;
+		InstructionFlags flag_mask {};
+		PixelProviderCallback pixProviderFunc {};
 	};
 
 } // namespace fasstv

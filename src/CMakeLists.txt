@@ -1,9 +1,8 @@
 add_executable(fasstv
 		main.cpp
 		util/Logger.cpp
-		util/SDLExtensions.cpp
+		util/Rect.cpp
 		util/StdoutSink.cpp
-		util/Oscillator.cpp
 		SSTV.cpp
 		AudioExport.cpp
 		ImageUtilities.cpp
