@@ -1,8 +1,8 @@
 // Created by block on 2024-11-14.
 
-#include "ImageUtilities.hpp"
-
+#include <util/ImageUtilities.hpp>
 #include <util/Logger.hpp>
+
 #include <SDL3_image/SDL_image.h>
 
 extern "C" {

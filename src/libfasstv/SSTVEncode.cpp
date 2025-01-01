@@ -1,26 +1,21 @@
-// Created by block on 5/25/24.
+// Created by block on 2025-01-01.
 
-#include "SSTV.hpp"
+#include <libfasstv/SSTVEncode.hpp>
 
 #include <cmath>
-#include <fstream>
 
 namespace fasstv {
 
-	SSTV& SSTV::The() {
-		static SSTV the;
+	SSTVEncode& SSTVEncode::The() {
+		static SSTVEncode the;
 		return the;
 	}
-
-	SSTV::SSTV() {
-		//SetMode("Robot 36");
-	}
-
-	void SSTV::SetMode(const std::string_view& name) {
-		for (auto& mode : MODES) {
+	
+	void SSTVEncode::SetMode(const std::string_view& name) {
+		for (auto& mode : SSTV::The().MODES) {
 			if (mode.name != name)
 				continue;
-
+			
 			SetMode(&mode);
 			return;
 		}
@@ -28,8 +23,8 @@ namespace fasstv {
 		SetMode(nullptr);
 	}
 
-	void SSTV::SetMode(int vis_code) {
-		for (auto& mode : MODES) {
+	void SSTVEncode::SetMode(int vis_code) {
+		for (auto& mode : SSTV::The().MODES) {
 			if (mode.vis_code != vis_code)
 				continue;
 
@@ -40,7 +35,7 @@ namespace fasstv {
 		SetMode(nullptr);
 	}
 
-	void SSTV::SetMode(Mode* mode) {
+	void SSTVEncode::SetMode(SSTV::Mode* mode) {
 		if (mode == nullptr) {
 			current_mode = nullptr;
 			return;
@@ -51,31 +46,20 @@ namespace fasstv {
 		current_mode = mode;
 		instructions.clear();
 
-		CreateVOXHeader();
-		CreateVISHeader();
+		SSTV::CreateVOXHeader(instructions);
+		SSTV::CreateVISHeader(instructions, mode->vis_code);
 
 		// some modes (for example, Robot 36) can define multiple lines per instruction set
 		int instruction_divisor = 1;
 		if (mode->uses_extra_lines) {
 			instruction_divisor = 0;
-			for (const Instruction& ins : mode->instructions_looping) {
-				if (ins.flags & InstructionFlags::NewLine)
+			for (const SSTV::Instruction& ins : mode->instructions_looping) {
+				if (ins.flags & SSTV::InstructionFlags::NewLine)
 					instruction_divisor++;
 			}
 		}
 
 		int lines = mode->lines / instruction_divisor;
-
-		// special hack for Robot monochrome modes
-		// might not exist? lol
-		/*if (mode->func_scan_handler == &SSTV::ScanMonochrome) {
-			// i subtract the sweep count for the letterboxing to function, so let's work out what we need
-			int sweeps = (mode->lines / 120) * 8;
-			for (int i = 0; i < sweeps; i++) {
-				instructions.push_back({ "(a) Sweep pulse", 0, 0, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) });
-				instructions.push_back({ "(b) Sweep scan",  1, 0, (InstructionFlags)(LengthUsesIndex | PitchIsSweep) });
-			}
-		}*/
 
 		// add the first non-looping instructions
 		if (mode->instruction_loop_start > 0) {
@@ -87,21 +71,21 @@ namespace fasstv {
 		for (int i = 0; i < lines; i++) {
 			for (size_t j = mode->instruction_loop_start; j < mode->instructions_looping.size(); j++) {
 				// found an extra line, but we don't use them - skip
-				Instruction ins = mode->instructions_looping[j];
-				if (!mode->uses_extra_lines && ins.flags & InstructionFlags::ExtraLine)
+				SSTV::Instruction ins = mode->instructions_looping[j];
+				if (!mode->uses_extra_lines && ins.flags & SSTV::InstructionFlags::ExtraLine)
 					continue;
 
 				instructions.push_back(ins);
 			}
 		}
 
-		CreateFooter();
+		SSTV::CreateFooter(instructions);
 
 		// Set instruction length ahead of time
 		float totalLength_ms = 0.0f;
 		for (auto& ins : instructions) {
 			float length_ms = ins.length_ms;
-			if(ins.flags & InstructionFlags::LengthUsesIndex) {
+			if(ins.flags & SSTV::InstructionFlags::LengthUsesIndex) {
 				length_ms = current_mode->timings[ins.length_ms];
 				//LogDebug("Length from index: {}, {}", ins.length_ms, mode->timings[ins.length_ms]);
 			}
@@ -112,7 +96,7 @@ namespace fasstv {
 		LogDebug("Mode has length: {}s", totalLength_ms / 1000.f);
 	}
 
-	void SSTV::SetSampleRate(int samplerate) {
+	void SSTVEncode::SetSampleRate(int samplerate) {
 		this->samplerate = samplerate;
 		this->timestep = 1.f / samplerate;
 
@@ -123,28 +107,28 @@ namespace fasstv {
 		estimated_length_in_samples = ((totalLength_ms * samplerate) / 1000.f);
 	}
 
-	void SSTV::SetLetterbox(Rect rect) {
+	void SSTVEncode::SetLetterbox(Rect rect) {
 		letterbox = rect;
 	}
 
-	void SSTV::SetLetterboxLines(bool b) {
+	void SSTVEncode::SetLetterboxLines(bool b) {
 		letterboxLines = b;
 	}
 
-	void SSTV::SetPixelProvider(fasstv::SSTV::PixelProviderCallback cb) {
+	void SSTVEncode::SetPixelProvider(SSTVEncode::PixelProviderCallback cb) {
 		pixProviderFunc = cb;
 	}
 
-	void SSTV::SetInstructionFlagMask(SSTV::InstructionFlags flags, bool invert) {
+	void SSTVEncode::SetInstructionFlagMask(SSTV::InstructionFlags flags, bool invert) {
 		flag_mask = flags;
 		flag_mask_invert = invert;
 	}
 
-	SSTV::Mode* SSTV::GetMode() {
+	SSTV::Mode* SSTVEncode::GetMode() {
 		return current_mode;
 	}
 
-	void SSTV::GetState(std::int32_t* cur_x, std::int32_t* cur_y, std::uint32_t* cur_sample, std::uint32_t* length_in_samples) {
+	void SSTVEncode::GetState(std::int32_t* cur_x, std::int32_t* cur_y, std::uint32_t* cur_sample, std::uint32_t* length_in_samples) {
 		if (cur_x)
 			*cur_x = this->cur_x;
 		if (cur_y)
@@ -155,59 +139,18 @@ namespace fasstv {
 			*length_in_samples = this->estimated_length_in_samples;
 	}
 
-	void SSTV::CreateVOXHeader() {
-		instructions.push_back({"VOX Low",  100, 1900});
-		instructions.push_back({"VOX Low",  100, 1500});
-		instructions.push_back({"VOX Low",  100, 1900});
-		instructions.push_back({"VOX Low",  100, 1500});
-		instructions.push_back({"VOX High", 100, 2300});
-		instructions.push_back({"VOX High", 100, 1500});
-		instructions.push_back({"VOX High", 100, 2300});
-		instructions.push_back({"VOX High", 100, 1500});
-	}
-
-	void SSTV::CreateVISHeader() {
-		instructions.push_back({"Leader 1",   300, 1900});
-		instructions.push_back({"break",      10,  1200});
-		instructions.push_back({"Leader 2",   300, 1900});
-
-		// VIS
-		instructions.push_back({"VIS start",  30,  1200});
-		bool parity = false;
-		for (int i = 0; i < 7; i++) {
-			bool bit = current_mode->vis_code & (1 << i);
-			instructions.push_back({"VIS bit " + std::to_string(i), 30, bit ? 1100.f : 1300.f});
-
-			if (bit)
-				parity = !parity;
-		}
-		instructions.push_back({"VIS parity", 30, parity ? 1100.f : 1300.f});
-		instructions.push_back({"VIS stop",   30,  1200});
-	}
-
-	void SSTV::CreateFooter() {
-		// I've got no clue if this is right. I could barely find information
-		// on the VOX tones, and none about this. If I understand it right,
-		// this may just be an MMSSTV feature?
-		instructions.push_back({"Footer 1", 100, 1900});
-		instructions.push_back({"Footer 2", 100, 1500});
-		instructions.push_back({"Footer 3", 100, 1900});
-		instructions.push_back({"Footer 4", 100, 1500});
-	}
-
-	bool SSTV::GetNextInstruction() {
+	bool SSTVEncode::GetNextInstruction() {
 		last_instruction_sample = cur_sample;
 
 		if (current_instruction >= instructions.end().base() - 1)
 			return false;
 		current_instruction++;
 
-		int len_samples = current_instruction->length_ms / (timestep * 1000);
-
-		LogDebug("New instruction \"{}\" {}Hz ({}ms, {} samples)", current_instruction->name, ((current_instruction->flags & InstructionFlags::PitchUsesIndex) ? current_mode->frequencies[current_instruction->pitch] : current_instruction->pitch), current_instruction->length_ms, len_samples);
+		//int len_samples = current_instruction->length_ms / (timestep * 1000);
+		//LogDebug("New instruction \"{}\" {}Hz ({}ms, {} samples)", current_instruction->name, ((current_instruction->flags & SSTV::InstructionFlags::PitchUsesIndex) ? current_mode->frequencies[current_instruction->pitch] : current_instruction->pitch), current_instruction->length_ms, len_samples);
 
 		// increment a new line when we find them
-		if(current_instruction->flags & InstructionFlags::NewLine)
+		if(current_instruction->flags & SSTV::InstructionFlags::NewLine)
 			cur_y++;
 
 		/*if (current_instruction->flags & InstructionFlags::PitchUsesIndex) {
@@ -223,44 +166,53 @@ namespace fasstv {
 		return true;
 	}
 
-	float SSTV::GetSamplePitch(Rect rect) {
+	float SSTVEncode::GetSamplePitch(Rect rect) {
 		// by default, just use the value
 		float pitch = current_instruction->pitch;
 
-		if(current_instruction->flags & InstructionFlags::PitchUsesIndex) {
+		if(current_instruction->flags & SSTV::InstructionFlags::PitchUsesIndex) {
 			// take the pitch from an index
 			pitch = current_mode->frequencies[current_instruction->pitch];
-		} else if(current_instruction->flags & InstructionFlags::PitchIsSweep) {
+		} else if(current_instruction->flags & SSTV::InstructionFlags::PitchIsSweep) {
 			pitch = ScanSweep(current_mode, cur_x, true);
-		} else if(current_instruction->flags & InstructionFlags::PitchIsDelegated) {
+		} else if(current_instruction->flags & SSTV::InstructionFlags::PitchIsDelegated) {
 			// we're about to do a new scan, delegate it
 
-			if(current_mode->func_scan_handler != nullptr) {
-				// calculate the letterbox
-				bool letterbox_sides = letterbox.x > 0 && (cur_x < letterbox.x || cur_x >= letterbox.x + letterbox.w);
-				bool letterbox_tops = letterbox.y > 0 && (cur_y < letterbox.y || cur_y >= letterbox.y + letterbox.h);
+			// calculate the letterbox
+			bool letterbox_sides = letterbox.x > 0 && (cur_x < letterbox.x || cur_x >= letterbox.x + letterbox.w);
+			bool letterbox_tops = letterbox.y > 0 && (cur_y < letterbox.y || cur_y >= letterbox.y + letterbox.h);
 
-				// RGBA8888 pixel
-				std::uint8_t* pixel = nullptr;
+			// RGBA8888 pixel
+			std::uint8_t* pixel = nullptr;
 
-				// calculate the sample to take when we're not drawing the letterbox
-				// otherwise, the nullptr is returned and the pattern will be drawn
-				if(!letterbox_sides && !letterbox_tops) {
-					// where we're at along our scanline
-					int sample_x = rect.w * (std::max(cur_x - letterbox.x, 0) / (float)letterbox.w);
-					int sample_y = rect.h * (std::max(cur_y - letterbox.y, 0) / (float)letterbox.h);
+			// calculate the sample to take when we're not drawing the letterbox
+			// otherwise, the nullptr is returned and the pattern will be drawn
+			if(!letterbox_sides && !letterbox_tops) {
+				// where we're at along our scanline
+				int sample_x = rect.w * (std::max(cur_x - letterbox.x, 0) / (float)letterbox.w);
+				int sample_y = rect.h * (std::max(cur_y - letterbox.y, 0) / (float)letterbox.h);
 
-					// get pixel at that sample
-					if (pixProviderFunc != nullptr)
-						pixel = pixProviderFunc(sample_x, sample_y);
-					else
-						LogError("Pixel provider is null!!!");
-				}
+				// get pixel at that sample
+				if (pixProviderFunc != nullptr)
+					pixel = pixProviderFunc(sample_x, sample_y);
+				else
+					LogError("Pixel provider is null!!!");
+			}
 
-				pitch = current_mode->func_scan_handler(current_instruction, cur_x, cur_y, pixel);
-			} else {
-				LogError("Mode {} has delegated pitch with no scan handler", current_mode->name);
-				pitch = 1500.f;
+			switch (current_mode->scan_type) {
+				case SSTV::Monochrome:
+					pitch = ScanMonochrome(current_instruction, cur_x, cur_y, pixel);
+					break;
+				case SSTV::YRYBY:
+					pitch = ScanYRYBY(current_instruction, cur_x, cur_y, pixel);
+					break;
+				case SSTV::RGB:
+					pitch = ScanRGB(current_instruction, cur_x, cur_y, pixel);
+					break;
+				default:
+					LogError("Mode {} has delegated pitch with no scan handler", current_mode->name);
+					pitch = 1500.f;
+					break;
 			}
 		}
 
@@ -279,7 +231,7 @@ namespace fasstv {
 		return sin(phase);
 	}
 
-	void SSTV::ResetInstructionProcessing() {
+	void SSTVEncode::ResetInstructionProcessing() {
 		cur_sample = 0;
 		last_instruction_sample = 0;
 		phase = 0;
@@ -288,8 +240,8 @@ namespace fasstv {
 		current_instruction = instructions.data();
 	}
 
-	void SSTV::PumpInstructionProcessing(float* arr, size_t arr_size, Rect rect) {
-		for(int i = 0; i < arr_size; i++) {
+	void SSTVEncode::PumpInstructionProcessing(float* arr, size_t arr_size, Rect rect) {
+		for(size_t i = 0; i < arr_size; i++) {
 			int len_samples = current_instruction->length_ms / (timestep * 1000);
 
 			if (cur_sample >= last_instruction_sample + len_samples) {
@@ -309,7 +261,7 @@ namespace fasstv {
 		}
 	}
 
-	void SSTV::RunAllInstructions(std::vector<float>& samples, Rect rect) {
+	void SSTVEncode::RunAllInstructions(std::vector<float>& samples, Rect rect) {
 		//if (current_mode == nullptr)
 		//	return;
 
@@ -342,7 +294,7 @@ namespace fasstv {
 		}
 	}
 
-	float SSTV::ScanSweep(Mode* mode, int pos_x, bool invert) {
+	float SSTVEncode::ScanSweep(SSTV::Mode* mode, int pos_x, bool invert) {
 		// just sweeps the range
 		float factor = std::clamp((pos_x / (float)mode->width), 0.f, 1.f);
 		if (invert)
@@ -351,14 +303,14 @@ namespace fasstv {
 		return 1500.f + (800.f * factor);
 	}
 
-	float SSTV::ScanMonochrome(Instruction* ins, int pos_x, int pos_y, std::uint8_t* sampled_pixel) {
+	float SSTVEncode::ScanMonochrome(SSTV::Instruction* ins, int pos_x, int pos_y, std::uint8_t* sampled_pixel) {
 		if (ins == nullptr)
 			return 0;
 
 		float pitch = 1500.f;
 
 		if(sampled_pixel == nullptr) {
-			if (SSTV::The().letterboxLines) {
+			if (SSTVEncode::The().letterboxLines) {
 				bool pattern = ((pos_x + pos_y) / 11) % 2;
 
 				if(pattern)
@@ -372,7 +324,7 @@ namespace fasstv {
 		return pitch;
 	}
 
-	float SSTV::ScanRGB(Instruction* ins, int pos_x, int pos_y, std::uint8_t* sampled_pixel) {
+	float SSTVEncode::ScanRGB(SSTV::Instruction* ins, int pos_x, int pos_y, std::uint8_t* sampled_pixel) {
 		if (ins == nullptr)
 			return 0;
 
@@ -380,7 +332,7 @@ namespace fasstv {
 		int pass = std::clamp((int)ins->pitch, 0, 2); // modes 0-2 correspond to Y/R-Y/B-Y
 
 		if(sampled_pixel == nullptr) {
-			if (SSTV::The().letterboxLines) {
+			if (SSTVEncode::The().letterboxLines) {
 				bool pattern = ((pos_x + pos_y) / 11) % 2;
 
 				// max to R/G to make yellow
@@ -396,7 +348,7 @@ namespace fasstv {
 		return pitch;
 	}
 
-	float SSTV::ScanYRYBY(Instruction* ins, int pos_x, int pos_y, std::uint8_t* sampled_pixel) {
+	float SSTVEncode::ScanYRYBY(SSTV::Instruction* ins, int pos_x, int pos_y, std::uint8_t* sampled_pixel) {
 		float pitch = 1500.f;
 		int pass = std::clamp((int)ins->pitch, 0, 2); // modes 0-2 correspond to Y/R-Y/B-Y
 
@@ -405,7 +357,7 @@ namespace fasstv {
 		std::uint8_t B = 0;
 
 		if(sampled_pixel == nullptr) {
-			if (SSTV::The().letterboxLines) {
+			if (SSTVEncode::The().letterboxLines) {
 				bool pattern = ((pos_x + pos_y) / 11) % 2;
 
 				if(pattern) {
@@ -436,11 +388,12 @@ namespace fasstv {
 			case 2:
 				// B-Y
 				factor = (128.0 + (0.003906 * ((-37.945 * R) + (-74.494 * G) + (112.439 * B))));
+				break;
 		}
 
 		pitch = (1500. + (factor * 3.1372549));
 
 		return pitch;
 	}
-
+	
 } // namespace fasstv

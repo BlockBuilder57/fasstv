@@ -6,7 +6,7 @@ function(fasstv_setup_target target)
 
     # some sane compiler flags
     set(_CORE_COMPILE_ARGS -Wall -Wextra)
-    set(_CORE_LINKER_ARGS "-lswscale")
+    set(_CORE_LINKER_ARGS "")
 
     if("${CMAKE_BUILD_TYPE}" STREQUAL "Release")
         set(_CORE_COMPILE_ARGS ${_CORE_COMPILE_ARGS} -Werror)

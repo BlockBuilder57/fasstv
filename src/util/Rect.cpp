@@ -1,6 +1,6 @@
 // Created by block on 2024-11-12.
 
-#include "Rect.hpp"
+#include <util/Rect.hpp>
 
 namespace fasstv {
 	Rect Rect::CreateLetterbox(int box_width, int box_height, Rect rect) {

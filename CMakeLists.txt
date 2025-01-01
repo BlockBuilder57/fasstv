@@ -7,6 +7,9 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIC")
 project(fasstv
 	LANGUAGES C CXX
 	)
+project(fasstv-cli
+	LANGUAGES C CXX
+	)
 
 list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
 
@@ -28,4 +31,5 @@ endif()
 
 fasstv_set_alternate_linker()
 
-add_subdirectory(src)
+add_subdirectory(src/libfasstv)
+add_subdirectory(src/fasstv-cli)

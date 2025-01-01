@@ -3,8 +3,8 @@
 #pragma once
 
 #include <array>
-#include <util/Logger.hpp>
-#include <util/Rect.hpp>
+#include <cstdint>
+#include <string>
 #include <vector>
 
 namespace fasstv {
@@ -13,8 +13,6 @@ namespace fasstv {
 	   public:
 		static SSTV& The();
 
-		typedef std::uint8_t* (*PixelProviderCallback)(int sample_x, int sample_y);
-
 		enum InstructionFlags : std::uint8_t {
 			ExtraLine        = 0b000001, // for lines that would be considered "extra"
 			NewLine          = 0b000010, // indicates the start of a new line
@@ -22,6 +20,14 @@ namespace fasstv {
 			PitchUsesIndex   = 0b001000, // indicates that the pitch uses an index value in the mode
 			PitchIsDelegated = 0b010000, // indicates that the pitch is delegated to a scan handler
 			PitchIsSweep     = 0b100000  // indicates that the pitch is a simple sweep (SSTV::ScanSweep)
+		};
+
+		enum ScanType : std::uint8_t {
+			None,
+			Monochrome,
+			YRYBY, // also YCrCb
+			RGB,
+			Sweep
 		};
 
 		struct Instruction {
@@ -34,14 +40,14 @@ namespace fasstv {
 		struct Mode {
 			std::string name;
 			std::uint8_t vis_code;
-			int width;
-			int lines;
+			ScanType scan_type;
+			std::uint16_t width;
+			std::uint16_t lines;
 			bool uses_extra_lines;
 			std::vector<float> timings;
 			std::vector<int> frequencies;
-			float (*func_scan_handler)(Instruction* ins, int pos_x, int pos_y, std::uint8_t* sampled_pixel);
-			int instruction_loop_start;
 			std::vector<Instruction> instructions_looping;
+			int instruction_loop_start;
 		};
 
 		std::vector<Instruction> ROBOT_4_2_0_INSTRUCTIONS = {
@@ -130,227 +136,179 @@ namespace fasstv {
 
 		std::vector<Mode> MODES = {
 			// Robot
-			{ "Robot 12", 0,
+			{ "Robot 12", 0, ScanType::YRYBY,
 			  160, 120, true,
-			  {9.0f, 3.0f, 60.0f, 4.5f, 1.5f, 30.0f}, // sync pulse, sync porch, Y scan, separator pulse, porch, R-Y/B-Y scan
+			  {7.0f, 3.0f, 60.0f, 4.5f, 1.5f, 30.0f}, // sync pulse, sync porch, Y scan, separator pulse, porch, R-Y/B-Y scan
 			  {1200, 1500, 1900, 2300}, // sync pulse, sync porch/even separator pulse, porch, odd separator pulse
-			  &SSTV::ScanYRYBY, 0, ROBOT_4_2_0_INSTRUCTIONS
+			  ROBOT_4_2_0_INSTRUCTIONS, 0
 			},
-			{ "Robot 24", 4,
+			{ "Robot 24", 4, ScanType::YRYBY,
 			  160, 120, false,
 			  {9.0f, 3.0f, 88.0f, 4.5f, 1.5f, 44.0f}, // sync pulse, sync porch, Y scan, separator pulse, porch, R-Y/B-Y scan
 			  {1200, 1500, 1900, 2300}, // sync pulse, sync porch/even separator pulse, porch, odd separator pulse
-			  &SSTV::ScanYRYBY, 0, ROBOT_4_2_2_INSTRUCTIONS
+			  ROBOT_4_2_2_INSTRUCTIONS, 0
 			},
-			{ "Robot 36", 8,
+			{ "Robot 36", 8, ScanType::YRYBY,
 			  320, 240, true,
 			  {9.0f, 3.0f, 88.0f, 4.5f, 1.5f, 44.0f}, // sync pulse, sync porch, Y scan, separator pulse, porch, R-Y/B-Y scan
 			  {1200, 1500, 1900, 2300}, // sync pulse, sync porch/even separator pulse, porch, odd separator pulse
-			  &SSTV::ScanYRYBY, 0, ROBOT_4_2_0_INSTRUCTIONS
+			  ROBOT_4_2_0_INSTRUCTIONS, 0
 			},
-			{ "Robot 72", 12,
+			{ "Robot 72", 12, ScanType::YRYBY,
 			  320, 240, false,
 			  {9.0f, 3.0f, 138.0f, 4.5f, 1.5f, 69.0f}, // sync pulse, sync porch, Y scan, separator pulse, porch, R-Y/B-Y scan
 			  {1200, 1500, 1900, 2300}, // sync pulse, sync porch/even separator pulse, porch, odd separator pulse
-			  &SSTV::ScanYRYBY, 0, ROBOT_4_2_2_INSTRUCTIONS
+			  ROBOT_4_2_2_INSTRUCTIONS, 0
 			},
-			{ "B&W 8", 2,
+			{ "B&W 8", 2, ScanType::Monochrome,
 			  160, 120, false,
 			  {10.0f, 56.0f}, // sync, scan
 			  {1200}, // sync
-			  &SSTV::ScanMonochrome, 0, ROBOT_MONOCHROME_INSTRUCTIONS
+			  ROBOT_MONOCHROME_INSTRUCTIONS, 0
 			},
-			{ "B&W 12", 6,
+			{ "B&W 12", 6, ScanType::Monochrome,
 			  160, 120, false,
 			  {7.0f, 93.0f}, // sync, scan
 			  {1200}, // sync
-			  &SSTV::ScanMonochrome, 0, ROBOT_MONOCHROME_INSTRUCTIONS
+			  ROBOT_MONOCHROME_INSTRUCTIONS, 0
 			},
-			{ "B&W 24", 10,
+			{ "B&W 24", 10, ScanType::Monochrome,
 			  320, 240, false,
 			  {12.0f, 93.0f}, // sync, scan
 			  {1200}, // sync
-			  &SSTV::ScanMonochrome, 0, ROBOT_MONOCHROME_INSTRUCTIONS
+			  ROBOT_MONOCHROME_INSTRUCTIONS, 0
 			},
-			{ "B&W 36", 14,
+			{ "B&W 36", 14, ScanType::Monochrome,
 			  320, 240, false,
 			  {12.0f, 138.0f}, // sync, scan
 			  {1200}, // sync
-			  &SSTV::ScanMonochrome, 0, ROBOT_MONOCHROME_INSTRUCTIONS
+			  ROBOT_MONOCHROME_INSTRUCTIONS, 0
 			},
 
 			// Martin
-			{ "Martin 1", 44,
+			{ "Martin 1", 44, ScanType::RGB,
 			  320, 256, false,
 			  {4.862f, 0.572f, 146.432f}, // pulse, porch, color scan
 			  {1200, 1500}, // pulse, porch
-			  &SSTV::ScanRGB, 0, MARTIN_INSTRUCTIONS
+			  MARTIN_INSTRUCTIONS, 0
 			},
-			{ "Martin 2", 40,
+			{ "Martin 2", 40, ScanType::RGB,
 			  320, 256, false,
 			  {4.862f, 0.572f, 73.216f}, // pulse, porch, color scan
 			  {1200, 1500}, // sync pulse, porch
-			  &SSTV::ScanRGB, 0, MARTIN_INSTRUCTIONS
+			  MARTIN_INSTRUCTIONS, 0
 			},
-			{ "Martin 3", 36,
+			{ "Martin 3", 36, ScanType::RGB,
 			  128, 256, false,
 			  {4.862f, 0.572f, 146.432f}, // pulse, porch, color scan
 			  {1200, 1500}, // pulse, porch
-			  &SSTV::ScanRGB, 0, MARTIN_INSTRUCTIONS
+			  MARTIN_INSTRUCTIONS, 0
 			},
-			{ "Martin 4", 32,
+			{ "Martin 4", 32, ScanType::RGB,
 			  128, 256, false,
 			  {4.862f, 0.572f, 73.216f}, // pulse, porch, color scan
 			  {1200, 1500}, // sync pulse, porch
-			  &SSTV::ScanRGB, 0, MARTIN_INSTRUCTIONS
+			  MARTIN_INSTRUCTIONS, 0
 			},
 
 			// Wraase
-			{ "Wraase SC2-180", 55,
+			{ "Wraase SC2-180", 55, ScanType::RGB,
 			  320, 256, false,
 			  {5.5225f, 0.500f, 235.000f}, // pulse, porch, color scan
 			  {1200, 1500}, // sync pulse, porch
-			  &SSTV::ScanRGB, 0, WRASSE_INSTRUCTIONS
+			  WRASSE_INSTRUCTIONS, 0
 			},
 
 			// Scottie
-			{ "Scottie 1", 60,
+			{ "Scottie 1", 60, ScanType::RGB,
 			  320, 256, false,
 			  {9.0f, 1.5f, 138.240f}, // sync pulse, separator pulse
 			  {1200, 1500}, // sync pulse, separator pulse
-			  &SSTV::ScanRGB, 1, SCOTTIE_INSTRUCTIONS
+			  SCOTTIE_INSTRUCTIONS, 1
 			},
-			{ "Scottie 2", 56,
+			{ "Scottie 2", 56, ScanType::RGB,
 			  320, 256, false,
 			  {9.0f, 1.5f, 88.064f}, // sync pulse, separator pulse
 			  {1200, 1500}, // sync pulse, separator pulse
-			  &SSTV::ScanRGB, 1, SCOTTIE_INSTRUCTIONS
+			  SCOTTIE_INSTRUCTIONS, 1
 			},
-			{ "Scottie DX", 76,
+			{ "Scottie DX", 76, ScanType::RGB,
 			  320, 256, false,
 			  {9.0f, 1.5f, 345.6f}, // sync pulse, separator pulse
 			  {1200, 1500}, // sync pulse, separator pulse
-			  &SSTV::ScanRGB, 1, SCOTTIE_INSTRUCTIONS
+			  SCOTTIE_INSTRUCTIONS, 1
 			},
 
 			// PD
-			{ "PD50", 93,
+			{ "PD50", 93, ScanType::YRYBY,
 			  320, 256, true,
 			  {20.000f, 2.080f, 91.520f}, // sync pulse, porch, color scan
 			  {1200, 1500}, // sync pulse, porch
-			  &SSTV::ScanYRYBY, 0, PD_INSTRUCTIONS
+			  PD_INSTRUCTIONS, 0
 			},
-			{ "PD90", 99,
+			{ "PD90", 99, ScanType::YRYBY,
 			  320, 256, true,
 			  {20.000f, 2.080f, 170.240f}, // sync pulse, porch, color scan
 			  {1200, 1500}, // sync pulse, porch
-			  &SSTV::ScanYRYBY, 0, PD_INSTRUCTIONS
+			  PD_INSTRUCTIONS, 0
 			},
-			{ "PD120", 95,
+			{ "PD120", 95, ScanType::YRYBY,
 			  640, 496, true,
 			  {20.000f, 2.080f, 121.600f}, // sync pulse, porch, color scan
 			  {1200, 1500}, // sync pulse, porch
-			  &SSTV::ScanYRYBY, 0, PD_INSTRUCTIONS
+			  PD_INSTRUCTIONS, 0
 			},
-			{ "PD160", 98,
+			{ "PD160", 98, ScanType::YRYBY,
 			  512, 400, true,
 			  {20.000f, 2.080f, 195.584f}, // sync pulse, porch, color scan
 			  {1200, 1500}, // sync pulse, porch
-			  &SSTV::ScanYRYBY, 0, PD_INSTRUCTIONS
+			  PD_INSTRUCTIONS, 0
 			},
-			{ "PD180", 96,
+			{ "PD180", 96, ScanType::YRYBY,
 			  640, 496, true,
 			  {20.000f, 2.080f, 183.040f}, // sync pulse, porch, color scan
 			  {1200, 1500}, // sync pulse, porch
-			  &SSTV::ScanYRYBY, 0, PD_INSTRUCTIONS
+			  PD_INSTRUCTIONS, 0
 			},
-			{ "PD240", 97,
+			{ "PD240", 97, ScanType::YRYBY,
 			  640, 496, true,
 			  {20.000f, 2.080f, 244.480f}, // sync pulse, porch, color scan
 			  {1200, 1500}, // sync pulse, porch
-			  &SSTV::ScanYRYBY, 0, PD_INSTRUCTIONS
+			  PD_INSTRUCTIONS, 0
 			},
-			{ "PD290", 94,
+			{ "PD290", 94, ScanType::YRYBY,
 			  800, 616, true,
 			  {20.000f, 2.080f, 228.800f}, // sync pulse, porch, color scan
 			  {1200, 1500}, // sync pulse, porch
-			  &SSTV::ScanYRYBY, 0, PD_INSTRUCTIONS
+			  PD_INSTRUCTIONS, 0
 			},
 
 			// Pasokon
-			{ "Pasokon P3", 113,
+			{ "Pasokon P3", 113, ScanType::RGB,
 			  640, 496, false,
 			  {5.208f, 1.042f, 133.333f}, // pulse, porch, color scan
 			  {1200, 1500}, // pulse, porch
-			  &SSTV::ScanRGB, 0, PASOKON_INSTRUCTIONS
+			  PASOKON_INSTRUCTIONS, 0
 			},
-			{ "Pasokon P5", 114,
+			{ "Pasokon P5", 114, ScanType::RGB,
 			  640, 496, false,
 			  {7.813f, 1.563f, 200.000f}, // pulse, porch, color scan
 			  {1200, 1500}, // pulse, porch
-			  &SSTV::ScanRGB, 0, PASOKON_INSTRUCTIONS
+			  PASOKON_INSTRUCTIONS, 0
 			},
-			{ "Pasokon P7", 115,
+			{ "Pasokon P7", 115, ScanType::RGB,
 			  640, 496, false,
 			  {10.417f, 1.042f, 266.666f}, // pulse, porch, color scan
 			  {1200, 1500}, // pulse, porch
-			  &SSTV::ScanRGB, 0, PASOKON_INSTRUCTIONS
+			  PASOKON_INSTRUCTIONS, 0
 			}
 		};
 
 		SSTV();
 
-		void SetMode(const std::string_view& name);
-		void SetMode(int vis_code);
-		void SetMode(Mode* mode);
-
-		void SetSampleRate(int samplerate);
-		void SetLetterbox(Rect rect);
-		void SetLetterboxLines(bool b);
-		void SetPixelProvider(PixelProviderCallback cb);
-		void SetInstructionFlagMask(SSTV::InstructionFlags flags, bool invert);
-
-		SSTV::Mode* GetMode();
-		void GetState(std::int32_t* cur_x, std::int32_t* cur_y, std::uint32_t* cur_sample, std::uint32_t* length_in_samples);
-
-		bool IsProcessingDone() const { return last_instruction_sample >= estimated_length_in_samples; }
-
-		void ResetInstructionProcessing();
-		void PumpInstructionProcessing(float* arr, size_t arr_size, Rect rect);
-		void RunAllInstructions(std::vector<float>& samples, Rect rect);
-
-		static float ScanSweep(Mode* mode, int pos_x, bool invert);
-		static float ScanMonochrome(Instruction* ins, int pos_x, int pos_y, std::uint8_t* sampled_pixel);
-		static float ScanRGB(Instruction* ins, int pos_x, int pos_y, std::uint8_t* sampled_pixel);
-		static float ScanYRYBY(Instruction* ins, int pos_x, int pos_y, std::uint8_t* sampled_pixel);
-
-	   private:
-		void CreateVOXHeader();
-		void CreateVISHeader();
-		void CreateFooter();
-		bool GetNextInstruction();
-		float GetSamplePitch(Rect rect);
-
-		std::uint32_t samplerate = 44100;
-		float timestep = 1.f / samplerate;
-		std::uint32_t estimated_length_in_samples = 0;
-
-		Mode* current_mode = nullptr;
-		Instruction* current_instruction = nullptr;
-		float phase = 0;
-
-		std::vector<Instruction> instructions {};
-		std::vector<float> samples {};
-		std::int32_t cur_x = -1;
-		std::int32_t cur_y = -1;
-		std::uint32_t cur_sample = 0;
-		std::uint32_t last_instruction_sample = 0;
-
-		bool letterboxLines = false;
-		bool flag_mask_invert = false;
-		Rect letterbox {};
-		InstructionFlags flag_mask {};
-		PixelProviderCallback pixProviderFunc {};
+		static void CreateVOXHeader(std::vector<Instruction>& instructions);
+		static void CreateVISHeader(std::vector<Instruction>& instructions, std::uint8_t vis_code);
+		static void CreateFooter(std::vector<Instruction>& instructions);
 	};
 
 } // namespace fasstv

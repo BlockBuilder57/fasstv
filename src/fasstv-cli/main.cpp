@@ -3,9 +3,9 @@
 #include <util/Logger.hpp>
 #include <util/Rect.hpp>
 #include <util/StdoutSink.hpp>
-#include <AudioExport.hpp>
-#include <ImageUtilities.hpp>
-#include <SSTV.hpp>
+#include <util/AudioExport.hpp>
+#include <util/ImageUtilities.hpp>
+#include <libfasstv/SSTVEncode.hpp>
 
 #include <cargs.h>
 #include <fftw3.h>
@@ -23,6 +23,7 @@ static struct cag_option options[] = {
 	{ .identifier = 'm', .access_letters = "m", .access_name = "method", .value_name = "<method>", .description = "Scale method (eg. bilinear, bicubic, nearest, etc.)" },
 	{ .identifier = 'p', .access_letters = nullptr, .access_name = "play", .value_name = nullptr, .description = "Whether audio should be played from the executable." },
 	{ .identifier = 'c', .access_letters = "c", .access_name = "separate-scans", .value_name = nullptr, .description = "Outputs two audio files, one containing sync pulses and the other scanlines." },
+	{ .identifier = 'v', .access_letters = "v", .access_name = "volume", .value_name = "<0.0-1.0>", .description = "Volume of audio files. Default of 0.15." },
 	{ .identifier = 'h', .access_letters = "h", .access_name = "help", .value_name = nullptr, .description = "Show help" }
 };
 
@@ -50,16 +51,16 @@ bool ichar_equals(char a, char b) {
 	return std::tolower(static_cast<unsigned char>(a)) == std::tolower(static_cast<unsigned char>(b));
 }
 
-void OutputSamples(fasstv::SSTV& sstv, SDL_Surface* surfOut, std::filesystem::path& outputPath, int samplerate) {
+void OutputSamples(fasstv::SSTVEncode& sstvenc, SDL_Surface* surfOut, std::filesystem::path& outputPath, int samplerate, float volume) {
 	if (outputPath.empty())
 		return;
 
 	// one-shot
 	std::vector<float> samples;
-	sstv.RunAllInstructions(samples, {0, 0, surfOut->w, surfOut->h});
+	sstvenc.RunAllInstructions(samples, {0, 0, surfOut->w, surfOut->h});
 	// turn down
 	for (float& smp : samples)
-		smp *= 0.33f;
+		smp *= volume;
 
 	// for automatic file naming
 	/*std::string extension = ".wav";
@@ -68,7 +69,7 @@ void OutputSamples(fasstv::SSTV& sstv, SDL_Surface* surfOut, std::filesystem::pa
 		outputPath.replace_filename(inputPath.filename().string() + " " + sstv.GetMode()->name + extension);
 	}*/
 
-	fasstv::LogInfo("Saving \"{}\"...", outputPath.filename().c_str());
+	fasstv::LogInfo("Saving {}...", outputPath.filename().c_str());
 	std::ofstream file(outputPath.string(), std::ios::binary);
 	if (outputPath.extension() == ".wav")
 		fasstv::SamplesToWAV(samples, samplerate, file);
@@ -85,6 +86,7 @@ int main(int argc, char** argv) {
 	bool play = false;
 	bool separateScans = false;
 	int resizeFlags = SWS_BICUBIC;
+	float volume = 0.15f;
 
 	fasstv::LoggerAttachStdout();
 	fasstv::LogDebug("Built {} {}", __DATE__, __TIME__);
@@ -97,7 +99,7 @@ int main(int argc, char** argv) {
 		return SDL_APP_FAILURE;
 	}
 
-	fasstv::SSTV& sstv = fasstv::SSTV::The();
+	fasstv::SSTVEncode& sstvenc = fasstv::SSTVEncode::The();
 
 	cag_option_context context;
 	cag_option_init(&context, options, CAG_ARRAY_SIZE(options), argc, argv);
@@ -119,9 +121,9 @@ int main(int argc, char** argv) {
 				const char* chary = cag_option_get_value(&context);
 				if (chary != nullptr) {
 					if (isdigit(chary[0]))
-						sstv.SetMode(std::atoi(chary));
+						sstvenc.SetMode(std::atoi(chary));
 					else
-						sstv.SetMode(chary);
+						sstvenc.SetMode(chary);
 				}
 				break;
 			}
@@ -146,6 +148,10 @@ int main(int argc, char** argv) {
 			}
 			case 'c': {
 				separateScans = true;
+				break;
+			}
+			case 'v': {
+				volume = atof(cag_option_get_value(&context));
 				break;
 			}
 			case 'h':
@@ -181,7 +187,7 @@ int main(int argc, char** argv) {
 			return SDL_APP_FAILURE;
 		}
 
-		fasstv::LogDebug("Trying to use {}", SDL_GetAudioDeviceName(SDL_GetAudioStreamDevice(stream)));
+		fasstv::LogInfo("Trying to play through {}...", SDL_GetAudioDeviceName(SDL_GetAudioStreamDevice(stream)));
 
 		SDL_ResumeAudioStreamDevice(stream);
 	}
@@ -219,11 +225,11 @@ int main(int argc, char** argv) {
 	SDL_free(devices);*/
 
 	// fallback to Robot 36 if no mode set
-	if (sstv.GetMode() == nullptr)
-		sstv.SetMode("Robot 36");
+	if (sstvenc.GetMode() == nullptr)
+		sstvenc.SetMode("Robot 36");
 
 	// load in image, get proper dimensions
-	fasstv::SSTV::Mode* mode = sstv.GetMode();
+	fasstv::SSTV::Mode* mode = sstvenc.GetMode();
 	SDL_Surface* surfOrig; //= SDL_CreateSurface(256, 256, SDL_PIXELFORMAT_RGBA32);
 
 	surfOrig = fasstv::LoadImage(inputPath);
@@ -249,23 +255,23 @@ int main(int argc, char** argv) {
 
 	// do the signal
 	const int samplerate = 8000;
-	sstv.SetSampleRate(samplerate);
-	sstv.SetLetterbox(fasstv::Rect::CreateLetterbox(mode->width, mode->lines, {0, 0, surfOut->w, surfOut->h}));
-	sstv.SetLetterboxLines(false);
-	sstv.SetPixelProvider(&fasstv::GetSampleFromSurface);
+	sstvenc.SetSampleRate(samplerate);
+	sstvenc.SetLetterbox(fasstv::Rect::CreateLetterbox(mode->width, mode->lines, {0, 0, surfOut->w, surfOut->h}));
+	sstvenc.SetLetterboxLines(false);
+	sstvenc.SetPixelProvider(&fasstv::GetSampleFromSurface);
 
 	if (separateScans) {
 		std::filesystem::path outScan = outputPath.parent_path() += (outputPath.stem().string() + "-scan" + outputPath.extension().string());
 		std::filesystem::path outSync = outputPath.parent_path() += (outputPath.stem().string() + "-sync" + outputPath.extension().string());
 
-		sstv.SetInstructionFlagMask(fasstv::SSTV::InstructionFlags::PitchIsDelegated, true);
-		OutputSamples(sstv, surfOut, outScan, samplerate);
-		sstv.SetInstructionFlagMask(fasstv::SSTV::InstructionFlags::PitchIsDelegated, false);
-		OutputSamples(sstv, surfOut, outSync, samplerate);
-		sstv.SetInstructionFlagMask((fasstv::SSTV::InstructionFlags)0, false);
+		sstvenc.SetInstructionFlagMask(fasstv::SSTV::InstructionFlags::PitchIsDelegated, true);
+		OutputSamples(sstvenc, surfOut, outScan, samplerate, volume);
+		sstvenc.SetInstructionFlagMask(fasstv::SSTV::InstructionFlags::PitchIsDelegated, false);
+		OutputSamples(sstvenc, surfOut, outSync, samplerate, volume);
+		sstvenc.SetInstructionFlagMask((fasstv::SSTV::InstructionFlags)0, false);
 	}
 	else {
-		OutputSamples(sstv, surfOut, outputPath, samplerate);
+		OutputSamples(sstvenc, surfOut, outputPath, samplerate, volume);
 	}
 
 	/*SDL_SetRenderDrawColor(renderer, 80, 80, 80, 255);
@@ -323,7 +329,7 @@ int main(int argc, char** argv) {
 
 	const size_t buff_size = 320;
 	static float buff[buff_size];
-	sstv.ResetInstructionProcessing();
+	sstvenc.ResetInstructionProcessing();
 
 	SDL_Event event;
 	bool run = true;
@@ -364,21 +370,24 @@ int main(int argc, char** argv) {
 		if (stream != nullptr) {
 			const int minimum_audio = samplerate;
 			if (SDL_GetAudioStreamAvailable(stream) < minimum_audio) {
-				if (!sstv.IsProcessingDone() && surfOut != nullptr) {
-					sstv.PumpInstructionProcessing(&buff[0], buff_size, {0, 0, surfOut->w, surfOut->h});
+				if (!sstvenc.IsProcessingDone() && surfOut != nullptr) {
+					sstvenc.PumpInstructionProcessing(&buff[0], buff_size, {0, 0, surfOut->w, surfOut->h});
 					for (float& smp : buff)
-						smp *= 0.33f;
+						smp *= volume;
 					SDL_PutAudioStreamData(stream, buff, sizeof (buff));
 
 					/*std::int32_t cur_x, cur_y;
 					std::uint32_t cur_sample, length_in_samples;
-					sstv.GetState(&cur_x, &cur_y, &cur_sample, &length_in_samples);
+					sstvenc.GetState(&cur_x, &cur_y, &cur_sample, &length_in_samples);
 					fasstv::LogDebug("Progress: {:.2f}%", (cur_sample / (float)length_in_samples) * 100.f);*/
 				}
 				else {
 					run = false;
 				}
 			}
+		}
+		else {
+			run = false;
 		}
 	}
 
