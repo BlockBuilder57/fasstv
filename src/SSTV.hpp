@@ -305,7 +305,7 @@ namespace fasstv {
 		void SetMode(Mode* mode);
 
 		void SetSampleRate(int samplerate);
-		void SetLetterboxRect(Rect rect);
+		void SetLetterbox(Rect rect);
 		void SetLetterboxLines(bool b);
 		void SetPixelProvider(PixelProviderCallback cb);
 		void SetInstructionFlagMask(SSTV::InstructionFlags flags, bool invert);
@@ -317,7 +317,7 @@ namespace fasstv {
 
 		void ResetInstructionProcessing();
 		void PumpInstructionProcessing(float* arr, size_t arr_size, Rect rect);
-		std::vector<float> RunAllInstructions(Rect rect);
+		void RunAllInstructions(std::vector<float>& samples, Rect rect);
 
 		static float ScanSweep(Mode* mode, int pos_x, bool invert);
 		static float ScanMonochrome(Instruction* ins, int pos_x, int pos_y, std::uint8_t* sampled_pixel);
@@ -329,7 +329,7 @@ namespace fasstv {
 		void CreateVISHeader();
 		void CreateFooter();
 		bool GetNextInstruction();
-		float GetSamplePitch(Rect rect, Rect letterbox);
+		float GetSamplePitch(Rect rect);
 
 		std::uint32_t samplerate = 44100;
 		float timestep = 1.f / samplerate;
@@ -348,6 +348,7 @@ namespace fasstv {
 
 		bool letterboxLines = false;
 		bool flag_mask_invert = false;
+		Rect letterbox {};
 		InstructionFlags flag_mask {};
 		PixelProviderCallback pixProviderFunc {};
 	};

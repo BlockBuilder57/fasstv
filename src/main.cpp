@@ -22,6 +22,7 @@ static struct cag_option options[] = {
 	{ .identifier = 's', .access_letters = nullptr, .access_name = "stretch", .value_name = nullptr, .description = "If specified, stretch to fit." },
 	{ .identifier = 'm', .access_letters = "m", .access_name = "method", .value_name = "<method>", .description = "Scale method (eg. bilinear, bicubic, nearest, etc.)" },
 	{ .identifier = 'p', .access_letters = nullptr, .access_name = "play", .value_name = nullptr, .description = "Whether audio should be played from the executable." },
+	{ .identifier = 'c', .access_letters = "c", .access_name = "separate-scans", .value_name = nullptr, .description = "Outputs two audio files, one containing sync pulses and the other scanlines." },
 	{ .identifier = 'h', .access_letters = "h", .access_name = "help", .value_name = nullptr, .description = "Show help" }
 };
 
@@ -49,11 +50,40 @@ bool ichar_equals(char a, char b) {
 	return std::tolower(static_cast<unsigned char>(a)) == std::tolower(static_cast<unsigned char>(b));
 }
 
+void OutputSamples(fasstv::SSTV& sstv, SDL_Surface* surfOut, std::filesystem::path& outputPath, int samplerate) {
+	if (outputPath.empty())
+		return;
+
+	// one-shot
+	std::vector<float> samples;
+	sstv.RunAllInstructions(samples, {0, 0, surfOut->w, surfOut->h});
+	// turn down
+	for (float& smp : samples)
+		smp *= 0.33f;
+
+	// for automatic file naming
+	/*std::string extension = ".wav";
+	if (outputPath.empty()) {
+		outputPath = inputPath;
+		outputPath.replace_filename(inputPath.filename().string() + " " + sstv.GetMode()->name + extension);
+	}*/
+
+	fasstv::LogInfo("Saving \"{}\"...", outputPath.filename().c_str());
+	std::ofstream file(outputPath.string(), std::ios::binary);
+	if (outputPath.extension() == ".wav")
+		fasstv::SamplesToWAV(samples, samplerate, file);
+	else
+		fasstv::SamplesToAVCodec(samples, samplerate, file);
+	file.close();
+	samples.clear();
+}
+
 int main(int argc, char** argv) {
 	std::filesystem::path inputPath {};
 	std::filesystem::path outputPath {};
 	bool stretch = false;
 	bool play = false;
+	bool separateScans = false;
 	int resizeFlags = SWS_BICUBIC;
 
 	fasstv::LoggerAttachStdout();
@@ -112,6 +142,10 @@ int main(int argc, char** argv) {
 			}
 			case 'p': {
 				play = true;
+				break;
+			}
+			case 'c': {
+				separateScans = true;
 				break;
 			}
 			case 'h':
@@ -216,31 +250,22 @@ int main(int argc, char** argv) {
 	// do the signal
 	const int samplerate = 8000;
 	sstv.SetSampleRate(samplerate);
+	sstv.SetLetterbox(fasstv::Rect::CreateLetterbox(mode->width, mode->lines, {0, 0, surfOut->w, surfOut->h}));
 	sstv.SetLetterboxLines(false);
 	sstv.SetPixelProvider(&fasstv::GetSampleFromSurface);
 
-	if (!outputPath.empty()) {
-		// one-shot
-		std::vector<float> samples;
-		samples = sstv.RunAllInstructions({0, 0, surfOut->w, surfOut->h});
-		// turn down
-		for (float& smp : samples)
-			smp *= 0.33f;
+	if (separateScans) {
+		std::filesystem::path outScan = outputPath.parent_path() += (outputPath.stem().string() + "-scan" + outputPath.extension().string());
+		std::filesystem::path outSync = outputPath.parent_path() += (outputPath.stem().string() + "-sync" + outputPath.extension().string());
 
-		// for automatic file naming
-		/*std::string extension = ".wav";
-		if (outputPath.empty()) {
-			outputPath = inputPath;
-			outputPath.replace_filename(inputPath.filename().string() + " " + sstv.GetMode()->name + extension);
-		}*/
-
-		fasstv::LogInfo("Saving \"{}\"...", outputPath.filename().c_str());
-		std::ofstream file(outputPath.string(), std::ios::binary);
-		if (outputPath.extension() == ".wav")
-			fasstv::SamplesToWAV(samples, samplerate, file);
-		else
-			fasstv::SamplesToAVCodec(samples, samplerate, file);
-		file.close();
+		sstv.SetInstructionFlagMask(fasstv::SSTV::InstructionFlags::PitchIsDelegated, true);
+		OutputSamples(sstv, surfOut, outScan, samplerate);
+		sstv.SetInstructionFlagMask(fasstv::SSTV::InstructionFlags::PitchIsDelegated, false);
+		OutputSamples(sstv, surfOut, outSync, samplerate);
+		sstv.SetInstructionFlagMask((fasstv::SSTV::InstructionFlags)0, false);
+	}
+	else {
+		OutputSamples(sstv, surfOut, outputPath, samplerate);
 	}
 
 	/*SDL_SetRenderDrawColor(renderer, 80, 80, 80, 255);

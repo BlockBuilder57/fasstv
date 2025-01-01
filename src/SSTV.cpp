@@ -123,6 +123,10 @@ namespace fasstv {
 		estimated_length_in_samples = ((totalLength_ms * samplerate) / 1000.f);
 	}
 
+	void SSTV::SetLetterbox(Rect rect) {
+		letterbox = rect;
+	}
+
 	void SSTV::SetLetterboxLines(bool b) {
 		letterboxLines = b;
 	}
@@ -219,7 +223,7 @@ namespace fasstv {
 		return true;
 	}
 
-	float SSTV::GetSamplePitch(Rect rect, Rect letterbox) {
+	float SSTV::GetSamplePitch(Rect rect) {
 		// by default, just use the value
 		float pitch = current_instruction->pitch;
 
@@ -285,8 +289,6 @@ namespace fasstv {
 	}
 
 	void SSTV::PumpInstructionProcessing(float* arr, size_t arr_size, Rect rect) {
-		Rect letterbox = Rect::CreateLetterbox(current_mode->width, current_mode->lines, rect);
-
 		for(int i = 0; i < arr_size; i++) {
 			int len_samples = current_instruction->length_ms / (timestep * 1000);
 
@@ -301,20 +303,18 @@ namespace fasstv {
 			float widthfrac = ((float)(cur_sample - last_instruction_sample) / len_samples);
 			cur_x = current_mode->width * widthfrac;
 
-			arr[i] = GetSamplePitch(rect, letterbox);
+			arr[i] = GetSamplePitch(rect);
 
 			cur_sample++;
 		}
 	}
 
-	std::vector<float> SSTV::RunAllInstructions(Rect rect) {
+	void SSTV::RunAllInstructions(std::vector<float>& samples, Rect rect) {
 		//if (current_mode == nullptr)
 		//	return;
 
 		last_instruction_sample = 0;
 		phase = 0;
-
-		Rect letterbox = Rect::CreateLetterbox(current_mode->width, current_mode->lines, rect);
 
 		// sampling helpers for sampling the screen
 		// do it all right now to save time!
@@ -332,7 +332,7 @@ namespace fasstv {
 				cur_x = current_mode->width * widthfrac;
 
 				// add to the list of samples
-				samples.push_back(GetSamplePitch(rect, letterbox));
+				samples.push_back(GetSamplePitch(rect));
 				cur_sample++;
 			}
 
@@ -340,8 +340,6 @@ namespace fasstv {
 			if (!GetNextInstruction())
 				break;
 		}
-
-		return samples;
 	}
 
 	float SSTV::ScanSweep(Mode* mode, int pos_x, bool invert) {
