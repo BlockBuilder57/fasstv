@@ -1,10 +1,10 @@
 add_executable(fasstv-cli
 		main.cpp
-		${CMAKE_SOURCE_DIR}/src/util/Logger.cpp
-		${CMAKE_SOURCE_DIR}/src/util/Rect.cpp
-		${CMAKE_SOURCE_DIR}/src/util/StdoutSink.cpp
-		${CMAKE_SOURCE_DIR}/src/util/AudioExport.cpp
-		${CMAKE_SOURCE_DIR}/src/util/ImageUtilities.cpp
+		${PROJECT_SOURCE_DIR}/src/util/Logger.cpp
+		${PROJECT_SOURCE_DIR}/src/util/Rect.cpp
+		${PROJECT_SOURCE_DIR}/src/util/StdoutSink.cpp
+		${PROJECT_SOURCE_DIR}/src/util/AudioExport.cpp
+		${PROJECT_SOURCE_DIR}/src/util/ImageUtilities.cpp
 		)
 
 fasstv_setup_target(fasstv-cli)
@@ -21,8 +21,8 @@ if(FFMPEG_FOUND)
 
 endif()
 
-target_include_directories(fasstv-cli PRIVATE ${CMAKE_SOURCE_DIR}/include)
-target_include_directories(fasstv-cli PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_include_directories(fasstv-cli PRIVATE ${PROJECT_SOURCE_DIR}/include)
+target_include_directories(fasstv-cli PRIVATE ${PROJECT_SOURCE_DIR}/src)
 
 target_link_libraries(fasstv-cli
 		fasstv

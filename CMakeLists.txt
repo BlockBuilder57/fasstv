@@ -14,7 +14,7 @@ project(fasstv-cli
 list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
 
 #include(Policies)
-include(ProjectFuncs)
+include(cmake/ProjectFuncs.cmake)
 
 find_package(FFmpeg COMPONENTS AVCODEC AVFORMAT AVUTIL AVDEVICE SWSCALE REQUIRED)
 find_package(SDL3 REQUIRED)

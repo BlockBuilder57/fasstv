@@ -6,6 +6,7 @@
 #include <util/AudioExport.hpp>
 #include <util/ImageUtilities.hpp>
 #include <libfasstv/SSTVEncode.hpp>
+#include <libfasstv/ExportUtils.hpp>
 
 #include <cargs.h>
 #include <fftw3.h>
