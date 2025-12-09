@@ -1,5 +1,6 @@
 add_executable(fasstv-cli
 		main.cpp
+		DecodingTests.cpp
 		${PROJECT_SOURCE_DIR}/src/util/Logger.cpp
 		${PROJECT_SOURCE_DIR}/src/util/Rect.cpp
 		${PROJECT_SOURCE_DIR}/src/util/StdoutSink.cpp

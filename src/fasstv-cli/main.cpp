@@ -7,14 +7,13 @@
 #include <util/ImageUtilities.hpp>
 #include <libfasstv/SSTVEncode.hpp>
 #include <libfasstv/ExportUtils.hpp>
+#include <fasstv-cli/DecodingTests.hpp>
 
 #include <cargs.h>
 #include <fftw3.h>
 #include <SDL3/SDL.h>
 
 #include <complex>
-#include <fstream>
-#include <filesystem>
 
 static struct cag_option options[] = {
 	{ .identifier = 'i', .access_letters = "i", .access_name = "input", .value_name = "<image file>", .description = "Path of the input image." },
@@ -165,13 +164,6 @@ int main(int argc, char** argv) {
 		}
 	}
 
-	/*const int windowDimensions[2] = {1024, 512};
-	SDL_Renderer* renderer;
-	SDL_Window* window;
-	SDL_CreateWindowAndRenderer("fasstv", windowDimensions[0], windowDimensions[1], 0, &window, &renderer);
-	SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-	SDL_RenderClear(renderer);*/
-
 	SDL_AudioStream* stream = nullptr;
 
 	if (play) {
@@ -252,7 +244,7 @@ int main(int argc, char** argv) {
 	SDL_free(surfOrig);
 
 	// do the signal
-	const int samplerate = 8000;
+	const int samplerate = 44100;
 	sstvenc.SetSampleRate(samplerate);
 	sstvenc.SetLetterbox(fasstv::Rect::CreateLetterbox(mode->width, mode->lines, {0, 0, surfOut->w, surfOut->h}));
 	sstvenc.SetLetterboxLines(false);
@@ -284,58 +276,12 @@ int main(int argc, char** argv) {
 		}
 	}
 
-	/*SDL_SetRenderDrawColor(renderer, 80, 80, 80, 255);
-	const int reflines[4] = {1100, 2300, 5, 5};
-	for (int num : reflines) {
-		for (int i = 0; i < 1024; i+=2)
-			SDL_RenderPoint(renderer, i, windowDimensions[1]-(num/8.f));
-	}
-
-	SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-	SDL_RenderPresent(renderer);
-
-	const int slideyLen = 128;
-	int line = 0;
-	const int lineSpread = 1;
-	const float binSize = samplerate/slideyLen;
-
-	fftw_complex* out;
-	fftw_plan p;
-
-	std::array<double, slideyLen> doubleSamples {};
-
-	out = (fftw_complex*)fftw_malloc(sizeof(fftw_complex) * slideyLen);
-	p = fftw_plan_dft_r2c_1d(slideyLen, doubleSamples.data(), out, FFTW_ESTIMATE);
-
-	for (int i = 0; i < samples.size(); i += slideyLen) {
-		for (int j = 0; j < slideyLen; j++)
-			doubleSamples[j] = samples[std::min(i+j, (int)samples.size())];
-
-		fftw_execute(p);
-
-		float bestMag = -1;
-		int bestMaxIdx = -1;
-
-		for (int j = 0; j < slideyLen/2; j++) {
-			auto thing = reinterpret_cast<std::complex<double>*>(out[j]);
-			if (thing->imag() >= bestMag) {
-				bestMag = thing->imag();
-				bestMaxIdx = j;
-			}
-		}
-
-		bestMag = 255.f;
-		SDL_SetRenderDrawColor(renderer, bestMag, bestMag, bestMag, 255);
-
-		for (int k = 0; k < lineSpread; k++)
-			SDL_RenderPoint(renderer, line+k, windowDimensions[1]-(bestMaxIdx * binSize / 8.f));
-
-		line += lineSpread;
-		SDL_RenderPresent(renderer);
-	}
-
-	fftw_destroy_plan(p);
-	fftw_free(out);*/
+	// decoding tests
+	//std::vector<float> samples;
+	//sstvenc.RunAllInstructions(samples, {0, 0, surfOut->w, surfOut->h});
+	//for (float& smp : samples)
+	//	smp *= 0.8;
+	//DecodingTests::DoTheThing(samples, samplerate);
 
 	const size_t buff_size = 320;
 	static float buff[buff_size];
@@ -404,7 +350,7 @@ int main(int argc, char** argv) {
 			}
 		}
 		else {
-			run = false;
+			//run = false;
 		}
 	}
 
