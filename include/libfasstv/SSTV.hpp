@@ -22,8 +22,15 @@ namespace fasstv {
 			PitchIsSweep     = 0b100000  // indicates that the pitch is a simple sweep (SSTV::ScanSweep)
 		};
 
+		enum InstructionType : std::uint8_t {
+			InvalidInstructionType,
+			Pulse,
+			Porch,
+			Scan
+		};
+
 		enum ScanType : std::uint8_t {
-			None,
+			InvalidScanType,
 			Monochrome,
 			YRYBY, // also YCrCb
 			RGB,
@@ -33,7 +40,8 @@ namespace fasstv {
 		struct Instruction {
 			std::string name {};
 			float length_ms {};
-			float pitch {};
+			float pitch {}; // pitch or scan identifier
+			InstructionType type {};
 			InstructionFlags flags {};
 		};
 
@@ -51,87 +59,87 @@ namespace fasstv {
 		};
 
 		std::vector<Instruction> ROBOT_4_2_0_INSTRUCTIONS = {
-			{ "(1) Sync pulse",               0, 0, (InstructionFlags)(NewLine | LengthUsesIndex | PitchUsesIndex) },
-			{ "(2) Sync porch",               1, 1, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
-			{ "(3) Y scan",                   2, 0, (InstructionFlags)(LengthUsesIndex | PitchIsDelegated) },
-			{ "(4) \"Even\" separator pulse", 3, 1, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
-			{ "(5) Porch",                    4, 2, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
-			{ "(6) R-Y scan",                 5, 1, (InstructionFlags)(LengthUsesIndex | PitchIsDelegated) },
-			{ "(7) Sync pulse",               0, 0, (InstructionFlags)(ExtraLine | NewLine | LengthUsesIndex | PitchUsesIndex) },
-			{ "(8) Sync porch",               1, 1, (InstructionFlags)(ExtraLine | LengthUsesIndex | PitchUsesIndex) },
-			{ "(9) Y scan",                   2, 0, (InstructionFlags)(ExtraLine | LengthUsesIndex | PitchIsDelegated) },
-			{ "(10) \"Odd\" separator pulse", 3, 3, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
-			{ "(11) Porch",                   4, 2, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
-			{ "(12) B-Y scan",                5, 2, (InstructionFlags)(LengthUsesIndex | PitchIsDelegated) },
+			{ "(1) Sync pulse",               0, 0, Pulse, (InstructionFlags)(NewLine | LengthUsesIndex | PitchUsesIndex) },
+			{ "(2) Sync porch",               1, 1, Porch, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
+			{ "(3) Y scan",                   2, 0, Scan, (InstructionFlags)(LengthUsesIndex | PitchIsDelegated) },
+			{ "(4) \"Even\" separator pulse", 3, 1, Pulse, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
+			{ "(5) Porch",                    4, 2, Porch, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
+			{ "(6) R-Y scan",                 5, 1, Scan, (InstructionFlags)(LengthUsesIndex | PitchIsDelegated) },
+			{ "(7) Sync pulse",               0, 0, Pulse, (InstructionFlags)(ExtraLine | NewLine | LengthUsesIndex | PitchUsesIndex) },
+			{ "(8) Sync porch",               1, 1, Porch, (InstructionFlags)(ExtraLine | LengthUsesIndex | PitchUsesIndex) },
+			{ "(9) Y scan",                   2, 0, Scan, (InstructionFlags)(ExtraLine | LengthUsesIndex | PitchIsDelegated) },
+			{ "(10) \"Odd\" separator pulse", 3, 3, Pulse, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
+			{ "(11) Porch",                   4, 2, Porch, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
+			{ "(12) B-Y scan",                5, 2, Scan, (InstructionFlags)(LengthUsesIndex | PitchIsDelegated) },
 		};
 
 		std::vector<Instruction> ROBOT_4_2_2_INSTRUCTIONS = {
-			{ "(1) Sync pulse",      0, 0, (InstructionFlags)(NewLine | LengthUsesIndex | PitchUsesIndex) },
-			{ "(2) Sync porch",      1, 1, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
-			{ "(3) Y scan",          2, 0, (InstructionFlags)(LengthUsesIndex | PitchIsDelegated) },
-			{ "(4) Separator pulse", 3, 1, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
-			{ "(5) Porch",           4, 2, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
-			{ "(6) R-Y scan",        5, 1, (InstructionFlags)(LengthUsesIndex | PitchIsDelegated) },
-			{ "(7) Separator pulse", 3, 3, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
-			{ "(8) Porch",           4, 2, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
-			{ "(9) B-Y scan",        5, 2, (InstructionFlags)(LengthUsesIndex | PitchIsDelegated) },
+			{ "(1) Sync pulse",      0, 0, Pulse, (InstructionFlags)(NewLine | LengthUsesIndex | PitchUsesIndex) },
+			{ "(2) Sync porch",      1, 1, Porch, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
+			{ "(3) Y scan",          2, 0, Scan, (InstructionFlags)(LengthUsesIndex | PitchIsDelegated) },
+			{ "(4) Separator pulse", 3, 1, Pulse, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
+			{ "(5) Porch",           4, 2, Porch, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
+			{ "(6) R-Y scan",        5, 1, Scan, (InstructionFlags)(LengthUsesIndex | PitchIsDelegated) },
+			{ "(7) Separator pulse", 3, 3, Pulse, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
+			{ "(8) Porch",           4, 2, Porch, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
+			{ "(9) B-Y scan",        5, 2, Scan, (InstructionFlags)(LengthUsesIndex | PitchIsDelegated) },
 		};
 
 		std::vector<Instruction> ROBOT_MONOCHROME_INSTRUCTIONS = {
-			{ "(1) Sync pulse", 0, 0, (InstructionFlags)(NewLine | LengthUsesIndex | PitchUsesIndex) },
-			{ "(2) Scan",       1, 0, (InstructionFlags)(LengthUsesIndex | PitchIsDelegated) },
+			{ "(1) Sync pulse", 0, 0, Pulse, (InstructionFlags)(NewLine | LengthUsesIndex | PitchUsesIndex) },
+			{ "(2) Scan",       1, 0, Scan, (InstructionFlags)(LengthUsesIndex | PitchIsDelegated) },
 		};
 
 		std::vector<Instruction> MARTIN_INSTRUCTIONS = {
-			{ "(1) Sync pulse",      0, 0, (InstructionFlags)(NewLine | LengthUsesIndex | PitchUsesIndex) },
-			{ "(2) Sync porch",      1, 1, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
-			{ "(3) Green scan",      2, 1, (InstructionFlags)(LengthUsesIndex | PitchIsDelegated) },
-			{ "(4) Separator pulse", 1, 1, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
-			{ "(5) Blue scan",       2, 2, (InstructionFlags)(LengthUsesIndex | PitchIsDelegated) },
-			{ "(6) Separator pulse", 1, 1, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
-			{ "(7) Red scan",        2, 0, (InstructionFlags)(LengthUsesIndex | PitchIsDelegated) },
-			{ "(8) Separator pulse", 1, 1, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) }
+			{ "(1) Sync pulse",      0, 0, Pulse, (InstructionFlags)(NewLine | LengthUsesIndex | PitchUsesIndex) },
+			{ "(2) Sync porch",      1, 1, Porch, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
+			{ "(3) Green scan",      2, 1, Scan, (InstructionFlags)(LengthUsesIndex | PitchIsDelegated) },
+			{ "(4) Separator pulse", 1, 1, Pulse, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
+			{ "(5) Blue scan",       2, 2, Scan, (InstructionFlags)(LengthUsesIndex | PitchIsDelegated) },
+			{ "(6) Separator pulse", 1, 1, Pulse, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
+			{ "(7) Red scan",        2, 0, Scan, (InstructionFlags)(LengthUsesIndex | PitchIsDelegated) },
+			{ "(8) Separator pulse", 1, 1, Pulse, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) }
 		};
 
 		std::vector<Instruction> WRASSE_INSTRUCTIONS = {
-			{ "(1) Sync pulse", 0, 0, (InstructionFlags)(NewLine | LengthUsesIndex | PitchUsesIndex) },
-			{ "(2) Porch",      1, 1, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
-			{ "(3) Green scan", 2, 0, (InstructionFlags)(LengthUsesIndex | PitchIsDelegated) },
-			{ "(4) Blue scan",  2, 1, (InstructionFlags)(LengthUsesIndex | PitchIsDelegated) },
-			{ "(5) Red scan",   2, 2, (InstructionFlags)(LengthUsesIndex | PitchIsDelegated) },
+			{ "(1) Sync pulse", 0, 0, Pulse, (InstructionFlags)(NewLine | LengthUsesIndex | PitchUsesIndex) },
+			{ "(2) Porch",      1, 1, Porch, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
+			{ "(3) Green scan", 2, 0, Scan, (InstructionFlags)(LengthUsesIndex | PitchIsDelegated) },
+			{ "(4) Blue scan",  2, 1, Scan, (InstructionFlags)(LengthUsesIndex | PitchIsDelegated) },
+			{ "(5) Red scan",   2, 2, Scan, (InstructionFlags)(LengthUsesIndex | PitchIsDelegated) },
 		};
 
 
 		std::vector<Instruction> SCOTTIE_INSTRUCTIONS = {
-			{ "(1) \"Starting\" sync pulse ", 0, 0, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
+			{ "(1) \"Starting\" sync pulse ", 0, 0, Pulse, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
 			//
-			{ "(2) Separator pulse",          1, 1, (InstructionFlags)(NewLine | LengthUsesIndex | PitchUsesIndex) },
-			{ "(3) Green scan",               2, 1, (InstructionFlags)(LengthUsesIndex | PitchIsDelegated) },
-			{ "(4) Separator pulse",          1, 1, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
-			{ "(5) Blue scan",                2, 2, (InstructionFlags)(LengthUsesIndex | PitchIsDelegated) },
-			{ "(6) Sync pulse",               0, 0, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
-			{ "(6) Sync porch",               1, 1, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
-			{ "(7) Red scan",                 2, 0, (InstructionFlags)(LengthUsesIndex | PitchIsDelegated) },
+			{ "(2) Separator pulse",          1, 1, Pulse, (InstructionFlags)(NewLine | LengthUsesIndex | PitchUsesIndex) },
+			{ "(3) Green scan",               2, 1, Scan, (InstructionFlags)(LengthUsesIndex | PitchIsDelegated) },
+			{ "(4) Separator pulse",          1, 1, Pulse, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
+			{ "(5) Blue scan",                2, 2, Scan, (InstructionFlags)(LengthUsesIndex | PitchIsDelegated) },
+			{ "(6) Sync pulse",               0, 0, Pulse, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
+			{ "(6) Sync porch",               1, 1, Porch, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
+			{ "(7) Red scan",                 2, 0, Scan, (InstructionFlags)(LengthUsesIndex | PitchIsDelegated) },
 		};
 
 		std::vector<Instruction> PD_INSTRUCTIONS = {
-			{ "(1) Sync pulse",              0, 0, (InstructionFlags)(NewLine | LengthUsesIndex | PitchUsesIndex) },
-			{ "(2) Porch",                   1, 1, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
-			{ "(3) Y scan (from odd line)",  2, 0, (InstructionFlags)(LengthUsesIndex | PitchIsDelegated) },
-			{ "(4) R-Y scan",                2, 1, (InstructionFlags)(LengthUsesIndex | PitchIsDelegated) },
-			{ "(5) B-Y scan",                2, 2, (InstructionFlags)(LengthUsesIndex | PitchIsDelegated) },
-			{ "(6) Y scan (from even line)", 2, 0, (InstructionFlags)(ExtraLine | NewLine | LengthUsesIndex | PitchIsDelegated) },
+			{ "(1) Sync pulse",              0, 0, Pulse, (InstructionFlags)(NewLine | LengthUsesIndex | PitchUsesIndex) },
+			{ "(2) Porch",                   1, 1, Porch, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
+			{ "(3) Y scan (from odd line)",  2, 0, Scan, (InstructionFlags)(LengthUsesIndex | PitchIsDelegated) },
+			{ "(4) R-Y scan",                2, 1, Scan, (InstructionFlags)(LengthUsesIndex | PitchIsDelegated) },
+			{ "(5) B-Y scan",                2, 2, Scan, (InstructionFlags)(LengthUsesIndex | PitchIsDelegated) },
+			{ "(6) Y scan (from even line)", 2, 0, Scan, (InstructionFlags)(ExtraLine | NewLine | LengthUsesIndex | PitchIsDelegated) },
 		};
 
 		std::vector<Instruction> PASOKON_INSTRUCTIONS = {
-			{ "(1) Sync pulse", 0, 0, (InstructionFlags)(NewLine | LengthUsesIndex | PitchUsesIndex) },
-			{ "(2) Porch",      1, 1, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
-			{ "(3) Red scan",   2, 0, (InstructionFlags)(LengthUsesIndex | PitchIsDelegated) },
-			{ "(4) Porch",      1, 1, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
-			{ "(5) Green scan", 2, 1, (InstructionFlags)(LengthUsesIndex | PitchIsDelegated) },
-			{ "(6) Porch",      1, 1, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
-			{ "(7) Blue scan",  2, 2, (InstructionFlags)(LengthUsesIndex | PitchIsDelegated) },
-			{ "(8) Porch",      1, 1, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) }
+			{ "(1) Sync pulse", 0, 0, Pulse, (InstructionFlags)(NewLine | LengthUsesIndex | PitchUsesIndex) },
+			{ "(2) Porch",      1, 1, Porch, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
+			{ "(3) Red scan",   2, 0, Scan, (InstructionFlags)(LengthUsesIndex | PitchIsDelegated) },
+			{ "(4) Porch",      1, 1, Porch, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
+			{ "(5) Green scan", 2, 1, Scan, (InstructionFlags)(LengthUsesIndex | PitchIsDelegated) },
+			{ "(6) Porch",      1, 1, Porch, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
+			{ "(7) Blue scan",  2, 2, Scan, (InstructionFlags)(LengthUsesIndex | PitchIsDelegated) },
+			{ "(8) Porch",      1, 1, Porch, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) }
 		};
 
 		std::vector<Mode> MODES = {

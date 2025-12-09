@@ -70,7 +70,7 @@ void OutputSamples(fasstv::SSTVEncode& sstvenc, SDL_Surface* surfOut, std::files
 		outputPath.replace_filename(inputPath.filename().string() + " " + sstv.GetMode()->name + extension);
 	}*/
 
-	fasstv::LogInfo("Saving {}...", outputPath.filename().c_str());
+	fasstv::LogInfo("Saving {}...", outputPath.c_str());
 	std::ofstream file(outputPath.string(), std::ios::binary);
 	if (outputPath.extension() == ".wav")
 		fasstv::SamplesToWAV(samples, samplerate, file);
@@ -92,8 +92,7 @@ int main(int argc, char** argv) {
 	fasstv::LoggerAttachStdout();
 	fasstv::LogDebug("Built {} {}", __DATE__, __TIME__);
 
-	fasstv::LogDebug("{}", SDL_VERSION);
-	fasstv::LogDebug("{}", SDL_GetRevision());
+	fasstv::LogDebug("SDL {}, rev {}", SDL_VERSION, SDL_GetRevision());
 
 	if (!SDL_Init(SDL_INIT_AUDIO | SDL_INIT_VIDEO /*| SDL_INIT_CAMERA*/)) {
 		fasstv::LogError("Couldn't initialize SDL: {}", SDL_GetError());
@@ -206,7 +205,7 @@ int main(int argc, char** argv) {
 	fasstv::LogDebug("Found {} cameras", devcount);
 	for (int i = 0; i < devcount; i++)
 		fasstv::LogDebug("Camera {}: {}", devices[i], SDL_GetCameraName(devices[i]));
-	SDL_CameraID camId = devices[1];
+	SDL_CameraID camId = devices[0];
 
 	int formatCount = 0;
 	SDL_CameraSpec desiredSpec = {};
@@ -214,12 +213,11 @@ int main(int argc, char** argv) {
 	for (int i = 0; i < formatCount; i++) {
 		SDL_CameraSpec* pSpec = camFormats[i];
 		SDL_Log("Cam %d Mode %d: %dx%d @ %d/%d - %s", camId, i, pSpec->width, pSpec->height, pSpec->framerate_numerator, pSpec->framerate_denominator, SDL_GetPixelFormatName(pSpec->format));
-		if (pSpec->framerate_numerator == 30) {
+		if (pSpec->width == 800 && pSpec->framerate_numerator == 30) {
 			SDL_Log("Trying this one");
 			memcpy(&desiredSpec, pSpec, sizeof(SDL_CameraSpec));
 			break;
 		}
-
 	}
 
 	SDL_Camera* cam = SDL_OpenCamera(camId, nullptr);
@@ -239,9 +237,8 @@ int main(int argc, char** argv) {
 
 	//SDL_free(surfOrig);
 	/*surfOrig = nullptr;
-	Uint64 timestampNS;
 	while (surfOrig == nullptr)
-		surfOrig = SDL_AcquireCameraFrame(cam, &timestampNS);*/
+		surfOrig = SDL_AcquireCameraFrame(cam, nullptr);*/
 
 	fasstv::Rect letterbox = fasstv::Rect::CreateLetterbox(mode->width, mode->lines, {0, 0, surfOrig->w, surfOrig->h});
 
@@ -261,18 +258,30 @@ int main(int argc, char** argv) {
 	sstvenc.SetLetterboxLines(false);
 	sstvenc.SetPixelProvider(&fasstv::GetSampleFromSurface);
 
-	if (separateScans) {
-		std::filesystem::path outScan = outputPath.parent_path() += (outputPath.stem().string() + "-scan" + outputPath.extension().string());
-		std::filesystem::path outSync = outputPath.parent_path() += (outputPath.stem().string() + "-sync" + outputPath.extension().string());
+	if (!outputPath.empty()) {
+		if (separateScans) {
+			std::filesystem::path outPulse = outputPath.parent_path() += ("/" + outputPath.stem().string() + "-pulse" + outputPath.extension().string());
+			std::filesystem::path outPorch = outputPath.parent_path() += ("/" + outputPath.stem().string() + "-porch" + outputPath.extension().string());
+			std::filesystem::path outScan0 = outputPath.parent_path() += ("/" + outputPath.stem().string() + "-scan0" + outputPath.extension().string());
+			std::filesystem::path outScan1 = outputPath.parent_path() += ("/" + outputPath.stem().string() + "-scan1" + outputPath.extension().string());
+			std::filesystem::path outScan2 = outputPath.parent_path() += ("/" + outputPath.stem().string() + "-scan2" + outputPath.extension().string());
 
-		sstvenc.SetInstructionFlagMask(fasstv::SSTV::InstructionFlags::PitchIsDelegated, true);
-		OutputSamples(sstvenc, surfOut, outScan, samplerate, volume);
-		sstvenc.SetInstructionFlagMask(fasstv::SSTV::InstructionFlags::PitchIsDelegated, false);
-		OutputSamples(sstvenc, surfOut, outSync, samplerate, volume);
-		sstvenc.SetInstructionFlagMask((fasstv::SSTV::InstructionFlags)0, false);
-	}
-	else {
-		OutputSamples(sstvenc, surfOut, outputPath, samplerate, volume);
+			sstvenc.SetInstructionTypeFilter(fasstv::SSTV::InstructionType::Pulse);
+			OutputSamples(sstvenc, surfOut, outPulse, samplerate, volume);
+			sstvenc.SetInstructionTypeFilter(fasstv::SSTV::InstructionType::Porch);
+			OutputSamples(sstvenc, surfOut, outPorch, samplerate, volume);
+			sstvenc.SetInstructionTypeFilter(fasstv::SSTV::InstructionType::Scan, 0);
+			OutputSamples(sstvenc, surfOut, outScan0, samplerate, volume);
+			sstvenc.SetInstructionTypeFilter(fasstv::SSTV::InstructionType::Scan, 1);
+			OutputSamples(sstvenc, surfOut, outScan1, samplerate, volume);
+			sstvenc.SetInstructionTypeFilter(fasstv::SSTV::InstructionType::Scan, 2);
+			OutputSamples(sstvenc, surfOut, outScan2, samplerate, volume);
+
+			sstvenc.SetInstructionTypeFilter(fasstv::SSTV::InstructionType::InvalidInstructionType);
+		}
+		else {
+			OutputSamples(sstvenc, surfOut, outputPath, samplerate, volume);
+		}
 	}
 
 	/*SDL_SetRenderDrawColor(renderer, 80, 80, 80, 255);
@@ -335,8 +344,8 @@ int main(int argc, char** argv) {
 	SDL_Event event;
 	bool run = true;
 
-	//SDL_Surface *surfFrame = nullptr, *surfOut = nullptr;
-	//Uint64 timestampNS;
+	//SDL_Surface *surfFrame = nullptr/*, *surfOut = nullptr*/;
+	//Uint64 timestampNS = 0;
 
 	while (run) {
 		SDL_PollEvent(&event);
@@ -346,26 +355,33 @@ int main(int argc, char** argv) {
 				break;
 		}
 
-		/*SDL_Surface* surfTemp = SDL_AcquireCameraFrame(cam, &timestampNS);
-		if (surfTemp) {
-			fasstv::LogDebug("Got a new frame?");
-			surfFrame = surfTemp;
-		}
-
-		if (surfFrame) {
-			fasstv::Rect letterbox = fasstv::Rect::CreateLetterbox(mode->width, mode->lines, {0, 0, surfFrame->w, surfFrame->h});
-
-			if (surfOut) {
-				SDL_free(surfOut);
-				surfOut = nullptr;
+		/*if (SDL_GetTicksNS() - timestampNS > 1000000000ul) {
+			SDL_Surface* surfTemp = SDL_AcquireCameraFrame(cam, &timestampNS);
+			fasstv::LogDebug("Trying for a frame, temp: {}, frame: {}", reinterpret_cast<void*>(surfTemp), reinterpret_cast<void*>(surfFrame));
+			if (surfTemp) {
+				fasstv::LogDebug("Got a new frame?");
+				surfFrame = surfTemp;
+				surfTemp = nullptr;
 			}
 
-			if (!stretch)
-				surfOut = fasstv::RescaleImage(surfFrame, letterbox.w, letterbox.h, resizeFlags);
-			else
-				surfOut = fasstv::RescaleImage(surfFrame, mode->width, mode->lines, resizeFlags);
+			if (surfFrame) {
+				fasstv::Rect letterbox = fasstv::Rect::CreateLetterbox(mode->width, mode->lines, {0, 0, surfFrame->w, surfFrame->h});
 
-			SDL_free(surfFrame);
+				if (surfOut) {
+					SDL_free(surfOut);
+					surfOut = nullptr;
+				}
+
+				if (!stretch)
+					surfOut = fasstv::RescaleImage(surfFrame, letterbox.w, letterbox.h, resizeFlags);
+				else
+					surfOut = fasstv::RescaleImage(surfFrame, mode->width, mode->lines, resizeFlags);
+
+				SDL_free(surfFrame);
+				surfFrame = nullptr;
+			}
+
+			timestampNS = SDL_GetTicksNS();
 		}*/
 
 		if (stream != nullptr) {

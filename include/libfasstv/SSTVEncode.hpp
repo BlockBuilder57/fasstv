@@ -23,9 +23,9 @@ namespace fasstv {
 		void SetLetterbox(Rect rect);
 		void SetLetterboxLines(bool b);
 		void SetPixelProvider(PixelProviderCallback cb);
-		void SetInstructionFlagMask(SSTV::InstructionFlags flags, bool invert);
+		void SetInstructionTypeFilter(SSTV::InstructionType type, std::int8_t scan_id = -1);
 
-		SSTV::Mode* GetMode();
+		SSTV::Mode* GetMode() const;
 		void GetState(std::int32_t* cur_x, std::int32_t* cur_y, std::uint32_t* cur_sample, std::uint32_t* length_in_samples);
 
 		bool IsProcessingDone() const { return last_instruction_sample >= estimated_length_in_samples; }
@@ -53,15 +53,15 @@ namespace fasstv {
 
 		std::vector<SSTV::Instruction> instructions {};
 		std::vector<float> samples {};
-		std::int32_t cur_x = -1;
-		std::int32_t cur_y = -1;
+		std::int16_t cur_x = -1;
+		std::int16_t cur_y = -1;
 		std::uint32_t cur_sample = 0;
 		std::uint32_t last_instruction_sample = 0;
 
 		bool letterboxLines = false;
-		bool flag_mask_invert = false;
 		Rect letterbox {};
-		SSTV::InstructionFlags flag_mask {};
+		SSTV::InstructionType filter_inst_type {};
+		std::int8_t filter_scan_id {};
 		PixelProviderCallback pixProviderFunc {};
 
 	};

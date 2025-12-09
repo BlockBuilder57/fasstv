@@ -119,12 +119,12 @@ namespace fasstv {
 		pixProviderFunc = cb;
 	}
 
-	void SSTVEncode::SetInstructionFlagMask(SSTV::InstructionFlags flags, bool invert) {
-		flag_mask = flags;
-		flag_mask_invert = invert;
+	void SSTVEncode::SetInstructionTypeFilter(SSTV::InstructionType type, std::int8_t scan_id) {
+		filter_inst_type = type;
+		filter_scan_id = scan_id;
 	}
 
-	SSTV::Mode* SSTVEncode::GetMode() {
+	SSTV::Mode* SSTVEncode::GetMode() const {
 		return current_mode;
 	}
 
@@ -170,13 +170,23 @@ namespace fasstv {
 		// by default, just use the value
 		float pitch = current_instruction->pitch;
 
+		if (filter_inst_type != SSTV::InstructionType::InvalidInstructionType) {
+			bool filtered = current_instruction->type == filter_inst_type;
+			if (current_instruction->type == SSTV::InstructionType::Scan && filter_scan_id >= 0)
+				if (current_instruction->pitch != (int)filter_scan_id)
+					filtered = false;
+
+			if (!filtered)
+				return 0.0f;
+		}
+
 		if(current_instruction->flags & SSTV::InstructionFlags::PitchUsesIndex) {
 			// take the pitch from an index
 			pitch = current_mode->frequencies[current_instruction->pitch];
 		} else if(current_instruction->flags & SSTV::InstructionFlags::PitchIsSweep) {
 			pitch = ScanSweep(current_mode, cur_x, true);
 		} else if(current_instruction->flags & SSTV::InstructionFlags::PitchIsDelegated) {
-			// we're about to do a new scan, delegate it
+			// we're about to do a delegated pitch, likely a scan
 
 			// calculate the letterbox
 			bool letterbox_sides = letterbox.x > 0 && (cur_x < letterbox.x || cur_x >= letterbox.x + letterbox.w);
@@ -189,8 +199,8 @@ namespace fasstv {
 			// otherwise, the nullptr is returned and the pattern will be drawn
 			if(!letterbox_sides && !letterbox_tops) {
 				// where we're at along our scanline
-				int sample_x = rect.w * (std::max(cur_x - letterbox.x, 0) / (float)letterbox.w);
-				int sample_y = rect.h * (std::max(cur_y - letterbox.y, 0) / (float)letterbox.h);
+				int sample_x = (rect.w - 1) * (std::max(cur_x - letterbox.x, 0) / (float)letterbox.w);
+				int sample_y = (rect.h - 1) * (std::max(cur_y - letterbox.y, 0) / (float)letterbox.h);
 
 				// get pixel at that sample
 				if (pixProviderFunc != nullptr)
@@ -214,14 +224,6 @@ namespace fasstv {
 					pitch = 1500.f;
 					break;
 			}
-		}
-
-		if (flag_mask) {
-			bool passes = current_instruction->flags & flag_mask;
-			if (flag_mask_invert)
-				passes = !passes;
-			if (passes)
-				return 0.0f;
 		}
 
 		// we need to see how the phase will increase for the frequency we want
