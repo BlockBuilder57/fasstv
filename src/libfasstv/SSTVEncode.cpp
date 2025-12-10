@@ -281,12 +281,48 @@ namespace fasstv {
 		while(current_instruction < instructions.end().base()) {
 			int len_samples = current_instruction->length_ms / (timestep * 1000);
 
+			bool doFiltering = filter_inst_type != SSTV::InstructionType::InvalidInstructionType;
+			bool filter_correctType = current_instruction->type == filter_inst_type || filter_inst_type == SSTV::InstructionType::Any;
+			bool filter_wrongScanId = false;
+			if (doFiltering) {
+				// check ids (instruction idx) on all
+				if (filter_inst_type == SSTV::InstructionType::Any) {
+					int index = current_instruction - instructions.data();
+
+					// hardcoded ick for the footer/header. this is a silly feature anyway
+					if (index > 20 && index < instructions.size() - 4) {
+						index = ((index - (21 + current_mode->instruction_loop_start)) % (current_mode->instructions_looping.size() - current_mode->instruction_loop_start)) + 1;
+
+						//LogDebug("I'm {} and I should be {}", index, current_instruction->name);
+
+						if (index != (int)filter_scan_id)
+							filter_wrongScanId = true;
+					}
+					else if (filter_scan_id != 0)
+						filter_wrongScanId = true;
+				}
+				// check ids on scans only
+				else if (filter_correctType && current_instruction->type == SSTV::InstructionType::Scan && filter_scan_id >= 0) {
+					if (current_instruction->pitch != (int)filter_scan_id)
+						filter_wrongScanId = true;
+				}
+			}
+
 			for(int i = 0; i < len_samples; i++) {
 				float widthfrac = ((float)i / len_samples);
 				cur_x = current_mode->width * widthfrac;
 
+
 				// add to the list of samples
-				samples.push_back(GetSamplePitch(rect));
+				float toPush = 0.f;
+				if (!doFiltering || (filter_correctType && !filter_wrongScanId))
+					toPush = GetSamplePitch(rect);
+
+				// random noise for testing
+				float r = static_cast <float> (rand()) / static_cast <float> (RAND_MAX);
+				//toPush += (r * 0.1f);
+
+				samples.push_back(toPush);
 				cur_sample++;
 			}
 

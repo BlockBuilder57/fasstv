@@ -26,7 +26,8 @@ namespace fasstv {
 			InvalidInstructionType,
 			Pulse,
 			Porch,
-			Scan
+			Scan,
+			Any
 		};
 
 		enum ScanType : std::uint8_t {

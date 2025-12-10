@@ -244,7 +244,7 @@ int main(int argc, char** argv) {
 	SDL_free(surfOrig);
 
 	// do the signal
-	const int samplerate = 44100;
+	const int samplerate = 8000;
 	sstvenc.SetSampleRate(samplerate);
 	sstvenc.SetLetterbox(fasstv::Rect::CreateLetterbox(mode->width, mode->lines, {0, 0, surfOut->w, surfOut->h}));
 	sstvenc.SetLetterboxLines(false);
@@ -252,22 +252,14 @@ int main(int argc, char** argv) {
 
 	if (!outputPath.empty()) {
 		if (separateScans) {
-			std::filesystem::path outPulse = outputPath.parent_path() += ("/" + outputPath.stem().string() + "-pulse" + outputPath.extension().string());
-			std::filesystem::path outPorch = outputPath.parent_path() += ("/" + outputPath.stem().string() + "-porch" + outputPath.extension().string());
-			std::filesystem::path outScan0 = outputPath.parent_path() += ("/" + outputPath.stem().string() + "-scan0" + outputPath.extension().string());
-			std::filesystem::path outScan1 = outputPath.parent_path() += ("/" + outputPath.stem().string() + "-scan1" + outputPath.extension().string());
-			std::filesystem::path outScan2 = outputPath.parent_path() += ("/" + outputPath.stem().string() + "-scan2" + outputPath.extension().string());
+			int neededFiles = mode->instructions_looping.size() + 1;
+			std::filesystem::path outPath = outputPath;
 
-			sstvenc.SetInstructionTypeFilter(fasstv::SSTV::InstructionType::Pulse);
-			OutputSamples(sstvenc, surfOut, outPulse, samplerate, volume);
-			sstvenc.SetInstructionTypeFilter(fasstv::SSTV::InstructionType::Porch);
-			OutputSamples(sstvenc, surfOut, outPorch, samplerate, volume);
-			sstvenc.SetInstructionTypeFilter(fasstv::SSTV::InstructionType::Scan, 0);
-			OutputSamples(sstvenc, surfOut, outScan0, samplerate, volume);
-			sstvenc.SetInstructionTypeFilter(fasstv::SSTV::InstructionType::Scan, 1);
-			OutputSamples(sstvenc, surfOut, outScan1, samplerate, volume);
-			sstvenc.SetInstructionTypeFilter(fasstv::SSTV::InstructionType::Scan, 2);
-			OutputSamples(sstvenc, surfOut, outScan2, samplerate, volume);
+			for (int i = 0; i < neededFiles; i++) {
+				sstvenc.SetInstructionTypeFilter(fasstv::SSTV::InstructionType::Any, i);
+				outPath.replace_filename(outputPath.stem().string() + "-stem" + std::to_string(i) + outputPath.extension().string());
+				OutputSamples(sstvenc, surfOut, outPath, samplerate, volume);
+			}
 
 			sstvenc.SetInstructionTypeFilter(fasstv::SSTV::InstructionType::InvalidInstructionType);
 		}
