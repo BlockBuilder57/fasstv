@@ -24,6 +24,8 @@ namespace fasstv {
 
 		enum InstructionType : std::uint8_t {
 			InvalidInstructionType,
+			VOX,
+			VIS,
 			Pulse,
 			Porch,
 			Scan,
@@ -58,6 +60,12 @@ namespace fasstv {
 			std::vector<Instruction> instructions_looping;
 			int instruction_loop_start;
 		};
+
+		const float VOX_FREQS[3] {1500, 1900, 2300}; // low, mid, high
+		const float VOX_LENGTH_MS = 100; // length per instruction
+		const float VIS_FREQS[2] {1200, 1900}; // break, leader
+		const float VIS_BIT_FREQS[2] {1100, 1300}; // 0, 1
+		const float VIS_LENGTHS_MS[3] = {10, 30, 300};
 
 		std::vector<Instruction> ROBOT_4_2_0_INSTRUCTIONS = {
 			{ "(1) Sync pulse",               0, 0, Pulse, (InstructionFlags)(NewLine | LengthUsesIndex | PitchUsesIndex) },
@@ -315,6 +323,10 @@ namespace fasstv {
 
 		SSTV();
 
+		static Mode* GetMode(const std::string_view& name);
+		static Mode* GetMode(int vis_code);
+
+		static void CreateInstructions(std::vector<Instruction>& instructions, const Mode* mode, bool clear = true);
 		static void CreateVOXHeader(std::vector<Instruction>& instructions);
 		static void CreateVISHeader(std::vector<Instruction>& instructions, std::uint8_t vis_code);
 		static void CreateFooter(std::vector<Instruction>& instructions);

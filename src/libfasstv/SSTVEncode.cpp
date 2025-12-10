@@ -12,27 +12,13 @@ namespace fasstv {
 	}
 	
 	void SSTVEncode::SetMode(const std::string_view& name) {
-		for (auto& mode : SSTV::The().MODES) {
-			if (mode.name != name)
-				continue;
-			
-			SetMode(&mode);
-			return;
-		}
-
-		SetMode(nullptr);
+		// can return nullptr!
+		SetMode(SSTV::GetMode(name));
 	}
 
 	void SSTVEncode::SetMode(int vis_code) {
-		for (auto& mode : SSTV::The().MODES) {
-			if (mode.vis_code != vis_code)
-				continue;
-
-			SetMode(&mode);
-			return;
-		}
-
-		SetMode(nullptr);
+		// can return nullptr!
+		SetMode(SSTV::GetMode(vis_code));
 	}
 
 	void SSTVEncode::SetMode(SSTV::Mode* mode) {
@@ -41,59 +27,10 @@ namespace fasstv {
 			return;
 		}
 
-		LogInfo("Setting SSTV mode to {}", mode->name);
+		LogInfo("Setting SSTV encode mode to {}", mode->name);
 
 		current_mode = mode;
-		instructions.clear();
-
-		SSTV::CreateVOXHeader(instructions);
-		SSTV::CreateVISHeader(instructions, mode->vis_code);
-
-		// some modes (for example, Robot 36) can define multiple lines per instruction set
-		int instruction_divisor = 1;
-		if (mode->uses_extra_lines) {
-			instruction_divisor = 0;
-			for (const SSTV::Instruction& ins : mode->instructions_looping) {
-				if (ins.flags & SSTV::InstructionFlags::NewLine)
-					instruction_divisor++;
-			}
-		}
-
-		int lines = mode->lines / instruction_divisor;
-
-		// add the first non-looping instructions
-		if (mode->instruction_loop_start > 0) {
-			// I don't think there's a need to worry about extra lines here
-			for (int i = 0; i < mode->instruction_loop_start; i++)
-				instructions.push_back(mode->instructions_looping[i]);
-		}
-
-		for (int i = 0; i < lines; i++) {
-			for (size_t j = mode->instruction_loop_start; j < mode->instructions_looping.size(); j++) {
-				// found an extra line, but we don't use them - skip
-				SSTV::Instruction ins = mode->instructions_looping[j];
-				if (!mode->uses_extra_lines && ins.flags & SSTV::InstructionFlags::ExtraLine)
-					continue;
-
-				instructions.push_back(ins);
-			}
-		}
-
-		SSTV::CreateFooter(instructions);
-
-		// Set instruction length ahead of time
-		float totalLength_ms = 0.0f;
-		for (auto& ins : instructions) {
-			float length_ms = ins.length_ms;
-			if(ins.flags & SSTV::InstructionFlags::LengthUsesIndex) {
-				length_ms = current_mode->timings[ins.length_ms];
-				//LogDebug("Length from index: {}, {}", ins.length_ms, mode->timings[ins.length_ms]);
-			}
-			ins.length_ms = length_ms;
-			totalLength_ms += length_ms;
-		}
-
-		LogDebug("Mode has length: {}s", totalLength_ms / 1000.f);
+		SSTV::CreateInstructions(instructions, mode);
 	}
 
 	void SSTVEncode::SetSampleRate(int samplerate) {
@@ -169,16 +106,6 @@ namespace fasstv {
 	float SSTVEncode::GetSamplePitch(Rect rect) {
 		// by default, just use the value
 		float pitch = current_instruction->pitch;
-
-		if (filter_inst_type != SSTV::InstructionType::InvalidInstructionType) {
-			bool filtered = current_instruction->type == filter_inst_type;
-			if (current_instruction->type == SSTV::InstructionType::Scan && filter_scan_id >= 0)
-				if (current_instruction->pitch != (int)filter_scan_id)
-					filtered = false;
-
-			if (!filtered)
-				return 0.0f;
-		}
 
 		if(current_instruction->flags & SSTV::InstructionFlags::PitchUsesIndex) {
 			// take the pitch from an index
@@ -320,7 +247,7 @@ namespace fasstv {
 
 				// random noise for testing
 				float r = static_cast <float> (rand()) / static_cast <float> (RAND_MAX);
-				//toPush += (r * 0.1f);
+				toPush += (r * 0.1f);
 
 				samples.push_back(toPush);
 				cur_sample++;
