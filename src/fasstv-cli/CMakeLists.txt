@@ -6,6 +6,9 @@ add_executable(fasstv-cli
 		${PROJECT_SOURCE_DIR}/src/util/StdoutSink.cpp
 		${PROJECT_SOURCE_DIR}/src/util/AudioExport.cpp
 		${PROJECT_SOURCE_DIR}/src/util/ImageUtilities.cpp
+
+		${PROJECT_SOURCE_DIR}/third_party/PicoSSTV/cordic.cpp
+		${PROJECT_SOURCE_DIR}/third_party/PicoSSTV/half_band_filter2.cpp
 		)
 
 fasstv_setup_target(fasstv-cli)

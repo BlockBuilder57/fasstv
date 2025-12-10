@@ -264,16 +264,16 @@ int main(int argc, char** argv) {
 			sstvenc.SetInstructionTypeFilter(fasstv::SSTV::InstructionType::InvalidInstructionType);
 		}
 		else {
-			OutputSamples(sstvenc, surfOut, outputPath, samplerate, volume);
+			//OutputSamples(sstvenc, surfOut, outputPath, samplerate, volume);
 		}
 	}
 
 	// decoding tests
-	//std::vector<float> samples;
-	//sstvenc.RunAllInstructions(samples, {0, 0, surfOut->w, surfOut->h});
-	//for (float& smp : samples)
-	//	smp *= 0.8;
-	//DecodingTests::DoTheThing(samples, samplerate);
+	std::vector<float> samples;
+	sstvenc.RunAllInstructions(samples, {0, 0, surfOut->w, surfOut->h});
+	for (float& smp : samples)
+		smp *= 0.8;
+	DecodingTests::DoTheThing(samples, samplerate);
 
 	const size_t buff_size = 320;
 	static float buff[buff_size];
