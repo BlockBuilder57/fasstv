@@ -246,8 +246,8 @@ namespace fasstv {
 					toPush = GetSamplePitch(rect);
 
 				// random noise for testing
-				float r = static_cast <float> (rand()) / static_cast <float> (RAND_MAX);
-				toPush += (r * 0.1f);
+				//float r = static_cast <float> (rand()) / static_cast <float> (RAND_MAX);
+				//toPush += (r * 0.2f);
 
 				samples.push_back(toPush);
 				cur_sample++;

@@ -11,10 +11,10 @@
 #include <array>
 #include <complex>
 
-const float freqYScale = 2.f;
-const float freqXScale = 1.5f;
+const float freqYScale = 3.f;
+const float freqXScale = 4.f;
 const float freqYStart = 1000.f / freqYScale; // in hertz
-const float freqXStart = 1.4f; // in seconds
+const float freqXStart = 1.7f; // in seconds
 
 const float fudge_ms = 6.f; // fudge factor for frequency checking. accounts for the delay from the filter
 
@@ -85,11 +85,19 @@ int16_t rolling_freq_from_sample(int16_t audio, int samplerate)
 }
 
 float AverageFreqAtArea(std::vector<float>& samples, int samplerate, float pos_ms, int width_samples = 10) {
+	if (width_samples <= 1) {
+		// just get the sample at pos_ms
+		return samples[(pos_ms / 1000.f) * samplerate];
+	}
+
 	pos_ms += fudge_ms;
 
 	int rangeCenter = (pos_ms / 1000.f) * samplerate;
 	int rangeMin = rangeCenter - (width_samples / 2);
 	int rangeMax = rangeCenter + (width_samples / 2);
+
+	rangeMin = std::clamp(rangeMin, 0, (int)samples.size() - 1);
+	rangeMax = std::clamp(rangeMax, 0, (int)samples.size() - 1);
 
 	//fasstv::LogDebug("AverageFreqAtArea checking {}-{}", rangeMin, rangeMax);
 
@@ -122,6 +130,7 @@ bool AverageFreqAtAreaExpected(std::vector<float>& samples, int samplerate, floa
 	return true;
 }
 
+#ifdef FASSTV_DEBUG
 bool debug_AverageFreqAtAreaExpected(SDL_Renderer* renderer, fasstv::SSTV::Instruction* ins, std::vector<float>& samples, int samplerate, float pos_ms, float freq_expected, float freq_margin = 50.f, int width_samples = 10, float* freq_back = nullptr) {
 	// make a back if we don't have one
 	float backer = 0;
@@ -162,6 +171,36 @@ bool debug_AverageFreqAtAreaExpected(SDL_Renderer* renderer, fasstv::SSTV::Instr
 	return res;
 }
 
+float debug_AverageFreqAtArea(SDL_Renderer* renderer, fasstv::SSTV::Instruction* ins, std::vector<float>& samples, int samplerate, float pos_ms, int width_samples = 10) {
+	float avg = AverageFreqAtArea(samples, samplerate, pos_ms, width_samples);
+
+	int dims[2] = {};
+	SDL_GetCurrentRenderOutputSize(renderer, &dims[0], &dims[1]);
+
+	// debug area
+	float sampCenter = ((((pos_ms + fudge_ms) / 1000.f) * samplerate) / freqXScale) - ((freqXStart / freqXScale) * samplerate);
+	float sampMin = sampCenter - (width_samples / freqXScale / 2);
+	float sampMax = sampCenter + (width_samples / freqXScale / 2);
+
+	int freqYObserved = dims[1]-(avg/freqYScale)+freqYStart;
+
+	// draw width lines
+	const int lineHeight = 5;
+	SDL_SetRenderDrawColor(renderer, 255, 0, 255, 255);
+	SDL_RenderLine(renderer, sampMin, freqYObserved - lineHeight, sampMin, freqYObserved + lineHeight);
+	SDL_RenderLine(renderer, sampMax, freqYObserved - lineHeight, sampMax, freqYObserved + lineHeight);
+	SDL_RenderLine(renderer, sampMax, freqYObserved - lineHeight, sampMax, freqYObserved + lineHeight);
+
+	// draw observed
+	SDL_SetRenderDrawColor(renderer, 255, 255, 0, 255);
+	SDL_RenderLine(renderer, sampMax, freqYObserved, sampMax, freqYObserved);
+
+	//SDL_RenderDebugText(renderer, sampMin, freqYExpected + freqYMargin + 1, ins->name.c_str());
+
+	return avg;
+}
+#endif
+
 void ActualStuff(std::vector<float>& samples, int samplerate, SDL_Renderer* renderer) {
 	cordic_init();
 
@@ -177,8 +216,8 @@ void ActualStuff(std::vector<float>& samples, int samplerate, SDL_Renderer* rend
 		int curX = ((i / freqXScale) - (start / freqXScale));
 		if(curX != lastX) {
 			// draw samples
-			SDL_SetRenderDrawColor(renderer, 127, 0, 0, 255);
-			SDL_RenderPoint(renderer, curX, dims[1] - ((samples[i] + 1.0f) * 0.5f) * dims[1]);
+			//SDL_SetRenderDrawColor(renderer, 127, 0, 0, 255);
+			//SDL_RenderPoint(renderer, curX, dims[1] - ((samples[i] + 1.0f) * 0.5f) * dims[1]);
 
 			// freq
 			SDL_SetRenderDrawColor(renderer, 180, 180, 180, 255);
@@ -191,6 +230,8 @@ void ActualStuff(std::vector<float>& samples, int samplerate, SDL_Renderer* rend
 		if (curX > dims[0])
 			break;
 	}
+
+	fasstv::LogInfo("Getting frequencies...");
 
 	// replace all samples with their estimated frequency (I simply don't care about it anymore)
 	for (int i = 0; i < samples.size(); i++)
@@ -211,6 +252,8 @@ void ActualStuff(std::vector<float>& samples, int samplerate, SDL_Renderer* rend
 	std::uint8_t vis_code = 0;
 	bool vis_parity = false;
 
+	fasstv::LogInfo("Reading header...");
+
 	for (int i = 0; i < instructions.size(); i++) {
 		auto& ins = instructions[i];
 
@@ -220,7 +263,7 @@ void ActualStuff(std::vector<float>& samples, int samplerate, SDL_Renderer* rend
 
 		if (i < instVISStart) {
 			//fasstv::LogDebug("Ins {} tracking at {}ms", ins.name, center);
-			bool res = debug_AverageFreqAtAreaExpected(renderer, &ins, samples, samplerate, center, ins.pitch, 30.f, width_samples / 2, &back);
+			bool res = AverageFreqAtAreaExpected(samples, samplerate, center, ins.pitch, 30.f, width_samples / 2, &back);
 		}
 		else if (i >= instVISStart + 3 && i < instVISEnd) {
 			// we're in vis, let's read it!
@@ -230,54 +273,120 @@ void ActualStuff(std::vector<float>& samples, int samplerate, SDL_Renderer* rend
 
 			if (vis_idx == 0 || vis_idx == 9) {
 				// start/end
-				bool inRange = debug_AverageFreqAtAreaExpected(renderer, &ins, samples, samplerate, center, ins.pitch, 30.f, width_samples / 2, &back);
+				bool inRange = AverageFreqAtAreaExpected(samples, samplerate, center, ins.pitch, 30.f, width_samples / 2, &back);
 
 				if (!inRange)
-					fasstv::LogDebug("oops, what we thought was VIS didn't start/end properly (wrong pitch, {} vs expected {})", back, ins.pitch);
+					fasstv::LogError("oops, what we thought was VIS didn't start/end properly (wrong pitch, {} vs expected {})", back, ins.pitch);
 			}
 			else if (vis_idx > 0 && vis_idx < 8) {
 				// put the vis code together
 				std::uint8_t bit = vis_idx - 1;
-				bool bitOn = debug_AverageFreqAtAreaExpected(renderer, &ins, samples, samplerate, center, fasstv::SSTV::The().VIS_BIT_FREQS[1], 30.f, width_samples / 2, &back);
+				bool bitOn = AverageFreqAtAreaExpected(samples, samplerate, center, fasstv::SSTV::The().VIS_BIT_FREQS[1], 30.f, width_samples / 2, &back);
 
 				if (bitOn)
 					vis_code = vis_code | static_cast<std::uint8_t>(1 << bit);
 
-				fasstv::LogDebug("VIS bit {}, {}. VIS is now {}", bit, bitOn, vis_code);
+				//fasstv::LogDebug("VIS bit {}, {}. VIS is now {}", bit, bitOn, vis_code);
 			}
 			else if (vis_idx == 8) {
 				// check parity
 				// oh god this may be GCC only?
 				vis_parity = __builtin_parity(vis_code);
 
-				bool bitOn = debug_AverageFreqAtAreaExpected(renderer, &ins, samples, samplerate, center, fasstv::SSTV::The().VIS_BIT_FREQS[1], 30.f, width_samples / 2, &back);
+				bool bitOn = AverageFreqAtAreaExpected(samples, samplerate, center, fasstv::SSTV::The().VIS_BIT_FREQS[1], 30.f, width_samples / 2, &back);
 
-				fasstv::LogDebug("read as VIS {}, which is mode {}", vis_code, fasstv::SSTV::GetMode(vis_code)->name);
+				fasstv::LogInfo("Read as VIS code {}, which is mode {}. Assuming this...", vis_code, fasstv::SSTV::GetMode(vis_code)->name);
 
-				if (vis_parity != bitOn)
-					fasstv::LogWarning("bit parity was wrong!");
+				if (vis_parity != bitOn) {
+					fasstv::LogError("bit parity was wrong!");
+					return;
+				}
 			}
 		}
 
 		progress_ms += ins.length_ms;
 	}
 
-	// time for real instructions
-	for (int i = instVISEnd; i < instructions.size(); i++) {
+	fasstv::SSTV::Mode* ourMode = sstv.GetMode(vis_code);
+	// clear the instructions we had, and rebuild for the new mode
+	sstv.CreateInstructions(instructions, ourMode);
+
+	fasstv::LogInfo("Rebuilt instructions for {}", ourMode->name);
+
+	// create a pixel buffer (RGB888) (alpha?)
+	size_t pixel_buf_size = ourMode->width * ourMode->lines * 3;
+	std::uint8_t* pixel_buf = static_cast<std::uint8_t*>(malloc(pixel_buf_size));
+	memset(pixel_buf, 0, pixel_buf_size);
+
+	int cur_line = -1;
+
+	// we have our mode, time for real instructions!
+	int loopEnd = instVISEnd + (ourMode->instructions_looping.size() - ourMode->instruction_loop_start) * 32;
+	loopEnd = instructions.size();
+	for (int i = instVISEnd; i < loopEnd; i++) {
 		auto& ins = instructions[i];
 
 		float center = progress_ms + (ins.length_ms / 2.f);
 		float back = 0.f;
 		int width_samples = (ins.length_ms / 1000.f) * samplerate;
+		int start_samples = (progress_ms / 1000.f) * samplerate;
 
 		//fasstv::LogDebug("Ins {} tracking at {}ms", ins.name, center);
 
+		float expectedPitch = ins.pitch;
+		if (ins.flags & fasstv::SSTV::InstructionFlags::PitchUsesIndex) {
+			expectedPitch = ourMode->frequencies[ins.pitch];
+		}
+
+		if (ins.flags & fasstv::SSTV::InstructionFlags::NewLine)
+			cur_line++;
+
 		if (ins.type != fasstv::SSTV::InstructionType::Scan) {
-			bool res = debug_AverageFreqAtAreaExpected(renderer, &ins, samples, samplerate, center, ins.pitch, 30.f, width_samples / 2, &back);
+			bool res = debug_AverageFreqAtAreaExpected(renderer, &ins, samples, samplerate, center, expectedPitch, 30.f, width_samples / 2, &back);
+		}
+		else {
+			float width_sampleSection = ins.length_ms / ourMode->width;
+
+			for (int j = 0; j < ourMode->width; j++) {
+				std::uint8_t* pix = &pixel_buf[((cur_line*ourMode->width) + j) * 3];
+
+				float freq = debug_AverageFreqAtArea(renderer, &ins, samples, samplerate, progress_ms + (j * width_sampleSection), (width_sampleSection / 1000.f) * samplerate);
+				// normalize to 0.0-1.06
+				// width of range is 2300-1500 = 800
+				float freqAdj = (freq - 1500.f) / 800.f;
+
+				if (freq > 0) {
+					switch (ourMode->scan_type) {
+						case fasstv::SSTV::ScanType::Monochrome:
+						case fasstv::SSTV::ScanType::Sweep:
+							pix[0] = pix[1] = pix[2] = freqAdj * 255;
+							break;
+						case fasstv::SSTV::ScanType::RGB:
+							pix[(int)ins.pitch] = freqAdj * 255;
+							break;
+						default:
+							break;
+					}
+				}
+			}
 		}
 
 		progress_ms += ins.length_ms;
 	}
+
+	fasstv::LogInfo("Done reading!");
+
+	// draw that bastard
+	for (int x = 0; x < ourMode->width; x++) {
+		for (int y = 0; y < ourMode->lines; y++) {
+			std::uint8_t* pix = &pixel_buf[((y*ourMode->width) + x) * 3];
+
+			SDL_SetRenderDrawColor(renderer, pix[0], pix[1], pix[2], 255);
+			SDL_RenderPoint(renderer, x, y);
+		}
+	}
+
+	free(pixel_buf);
 }
 
 void DecodingTests::DoTheThing(std::vector<float>& samples, int samplerate) {

@@ -264,7 +264,7 @@ int main(int argc, char** argv) {
 			sstvenc.SetInstructionTypeFilter(fasstv::SSTV::InstructionType::InvalidInstructionType);
 		}
 		else {
-			//OutputSamples(sstvenc, surfOut, outputPath, samplerate, volume);
+			OutputSamples(sstvenc, surfOut, outputPath, samplerate, volume);
 		}
 	}
 
