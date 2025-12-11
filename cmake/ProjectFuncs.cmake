@@ -2,14 +2,14 @@ function(fasstv_setup_target target)
     target_compile_definitions(${target} PRIVATE "$<$<CONFIG:DEBUG>:FASSTV_DEBUG>")
 
     target_include_directories(${target} PRIVATE ${PROJECT_SOURCE_DIR}/src)
-    target_compile_features(${target} PUBLIC cxx_std_20)
+    target_compile_features(${target} PUBLIC cxx_std_23)
 
     # some sane compiler flags
     set(_CORE_COMPILE_ARGS -Wall -Wextra)
     set(_CORE_LINKER_ARGS "")
 
     if("${CMAKE_BUILD_TYPE}" STREQUAL "Release")
-        set(_CORE_COMPILE_ARGS ${_CORE_COMPILE_ARGS} -Werror)
+        set(_CORE_COMPILE_ARGS ${_CORE_COMPILE_ARGS} -Wall)
 
         # If on Release use link-time optimizations.
         # On clang we use ThinLTO for even better build performance.

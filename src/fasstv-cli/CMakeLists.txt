@@ -1,14 +1,10 @@
 add_executable(fasstv-cli
 		main.cpp
-		DecodingTests.cpp
 		${PROJECT_SOURCE_DIR}/src/util/Logger.cpp
 		${PROJECT_SOURCE_DIR}/src/util/Rect.cpp
 		${PROJECT_SOURCE_DIR}/src/util/StdoutSink.cpp
 		${PROJECT_SOURCE_DIR}/src/util/AudioExport.cpp
 		${PROJECT_SOURCE_DIR}/src/util/ImageUtilities.cpp
-
-		${PROJECT_SOURCE_DIR}/third_party/PicoSSTV/cordic.cpp
-		${PROJECT_SOURCE_DIR}/third_party/PicoSSTV/half_band_filter2.cpp
 		)
 
 fasstv_setup_target(fasstv-cli)
@@ -33,7 +29,6 @@ target_link_libraries(fasstv-cli
 		SDL3::SDL3
 		SDL3_image::SDL3_image
 		cargs
-		fftw3
 
 		${FFMPEG_LIBRARIES}
 		)

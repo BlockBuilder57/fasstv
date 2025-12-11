@@ -1,29 +1,27 @@
 // Created by block on 11/12/24.
 
-#include <util/Logger.hpp>
-#include <util/Rect.hpp>
-#include <util/StdoutSink.hpp>
-#include <util/AudioExport.hpp>
-#include <util/ImageUtilities.hpp>
-#include <libfasstv/SSTVEncode.hpp>
-#include <libfasstv/ExportUtils.hpp>
-#include <fasstv-cli/DecodingTests.hpp>
-
 #include <cargs.h>
 #include <fftw3.h>
 #include <SDL3/SDL.h>
 
-#include <complex>
+#include <libfasstv/libfasstv.hpp>
+#include <util/AudioExport.hpp>
+#include <util/ImageUtilities.hpp>
+#include <util/Logger.hpp>
+#include <util/Rect.hpp>
+#include <util/StdoutSink.hpp>
 
 static struct cag_option options[] = {
 	{ .identifier = 'i', .access_letters = "i", .access_name = "input", .value_name = "<image file>", .description = "Path of the input image." },
 	{ .identifier = 'o', .access_letters = "o", .access_name = "output", .value_name = "<audio file>", .description = "Path of the output audio. Defaults to the input path, with the mode appended, and with an mp3 extension." },
+	{ .identifier = 'd', .access_letters = "d", .access_name = "decode", .value_name = nullptr, .description = "Whether we should immediately decode our signal. Will be moved elsewhere." },
 	{ .identifier = 'f', .access_letters = "f", .access_name = "format", .value_name = "<SSTV format|VIS code>", .description = "Specifies SSTV format by name or VIS code." },
 	{ .identifier = 's', .access_letters = nullptr, .access_name = "stretch", .value_name = nullptr, .description = "If specified, stretch to fit." },
 	{ .identifier = 'm', .access_letters = "m", .access_name = "method", .value_name = "<method>", .description = "Scale method (eg. bilinear, bicubic, nearest, etc.)" },
 	{ .identifier = 'p', .access_letters = nullptr, .access_name = "play", .value_name = nullptr, .description = "Whether audio should be played from the executable." },
 	{ .identifier = 'c', .access_letters = "c", .access_name = "separate-scans", .value_name = nullptr, .description = "Outputs two audio files, one containing sync pulses and the other scanlines." },
 	{ .identifier = 'v', .access_letters = "v", .access_name = "volume", .value_name = "<0.0-1.0>", .description = "Volume of audio files. Default of 0.15." },
+	{ .identifier = 'r', .access_letters = "r", .access_name = "samplerate", .value_name = "<rate in Hertz>", .description = "Sample rate of signals/audio files. Default of 8000." },
 	{ .identifier = 'h', .access_letters = "h", .access_name = "help", .value_name = nullptr, .description = "Show help" }
 };
 
@@ -84,16 +82,18 @@ int main(int argc, char** argv) {
 	std::filesystem::path outputPath {};
 	bool stretch = false;
 	bool play = false;
+	bool decode = false;
 	bool separateScans = false;
 	int resizeFlags = SWS_BICUBIC;
-	float volume = 0.15f;
+	float volume = 0.33f;
+	int samplerate = 8000;
 
 	fasstv::LoggerAttachStdout();
 	fasstv::LogDebug("Built {} {}", __DATE__, __TIME__);
 
 	fasstv::LogDebug("SDL {}, rev {}", SDL_VERSION, SDL_GetRevision());
 
-	if (!SDL_Init(SDL_INIT_AUDIO | SDL_INIT_VIDEO /*| SDL_INIT_CAMERA*/)) {
+	if (!SDL_Init(SDL_INIT_AUDIO /*| SDL_INIT_CAMERA*/)) {
 		fasstv::LogError("Couldn't initialize SDL: {}", SDL_GetError());
 		return SDL_APP_FAILURE;
 	}
@@ -114,6 +114,10 @@ int main(int argc, char** argv) {
 				const char* chary = cag_option_get_value(&context);
 				if (chary != nullptr)
 					outputPath = std::filesystem::path(chary);
+				break;
+			}
+			case 'd': {
+				decode = true;
 				break;
 			}
 			case 'f': {
@@ -151,6 +155,12 @@ int main(int argc, char** argv) {
 			}
 			case 'v': {
 				volume = atof(cag_option_get_value(&context));
+				break;
+			}
+			case 'r': {
+				samplerate = atoi(cag_option_get_value(&context));
+				// clamp
+				samplerate = samplerate < 4000 ? 4000 : samplerate;
 				break;
 			}
 			case 'h':
@@ -244,7 +254,6 @@ int main(int argc, char** argv) {
 	SDL_free(surfOrig);
 
 	// do the signal
-	const int samplerate = 8000;
 	sstvenc.SetSampleRate(samplerate);
 	sstvenc.SetLetterbox(fasstv::Rect::CreateLetterbox(mode->width, mode->lines, {0, 0, surfOut->w, surfOut->h}));
 	sstvenc.SetLetterboxLines(false);
@@ -264,7 +273,7 @@ int main(int argc, char** argv) {
 			sstvenc.SetInstructionTypeFilter(fasstv::SSTV::InstructionType::InvalidInstructionType);
 		}
 		else {
-			OutputSamples(sstvenc, surfOut, outputPath, samplerate, volume);
+			//OutputSamples(sstvenc, surfOut, outputPath, samplerate, volume);
 		}
 	}
 
@@ -273,7 +282,7 @@ int main(int argc, char** argv) {
 	sstvenc.RunAllInstructions(samples, {0, 0, surfOut->w, surfOut->h});
 	for (float& smp : samples)
 		smp *= 0.8;
-	DecodingTests::DoTheThing(samples, samplerate);
+	fasstv::SSTVDecode::The().DecodeSamples(samples, samplerate);
 
 	const size_t buff_size = 320;
 	static float buff[buff_size];
@@ -286,64 +295,73 @@ int main(int argc, char** argv) {
 	//Uint64 timestampNS = 0;
 
 	while (run) {
-		SDL_PollEvent(&event);
-		switch (event.type) {
-			case SDL_EVENT_QUIT:
-				run = false;
-				break;
-		}
-
-		/*if (SDL_GetTicksNS() - timestampNS > 1000000000ul) {
-			SDL_Surface* surfTemp = SDL_AcquireCameraFrame(cam, &timestampNS);
-			fasstv::LogDebug("Trying for a frame, temp: {}, frame: {}", reinterpret_cast<void*>(surfTemp), reinterpret_cast<void*>(surfFrame));
-			if (surfTemp) {
-				fasstv::LogDebug("Got a new frame?");
-				surfFrame = surfTemp;
-				surfTemp = nullptr;
-			}
-
-			if (surfFrame) {
-				fasstv::Rect letterbox = fasstv::Rect::CreateLetterbox(mode->width, mode->lines, {0, 0, surfFrame->w, surfFrame->h});
-
-				if (surfOut) {
-					SDL_free(surfOut);
-					surfOut = nullptr;
-				}
-
-				if (!stretch)
-					surfOut = fasstv::RescaleImage(surfFrame, letterbox.w, letterbox.h, resizeFlags);
-				else
-					surfOut = fasstv::RescaleImage(surfFrame, mode->width, mode->lines, resizeFlags);
-
-				SDL_free(surfFrame);
-				surfFrame = nullptr;
-			}
-
-			timestampNS = SDL_GetTicksNS();
-		}*/
-
-		if (stream != nullptr) {
-			const int minimum_audio = samplerate;
-			if (SDL_GetAudioStreamAvailable(stream) < minimum_audio) {
-				if (!sstvenc.IsProcessingDone() && surfOut != nullptr) {
-					sstvenc.PumpInstructionProcessing(&buff[0], buff_size, {0, 0, surfOut->w, surfOut->h});
-					for (float& smp : buff)
-						smp *= volume;
-					SDL_PutAudioStreamData(stream, buff, sizeof (buff));
-
-					/*std::int32_t cur_x, cur_y;
-					std::uint32_t cur_sample, length_in_samples;
-					sstvenc.GetState(&cur_x, &cur_y, &cur_sample, &length_in_samples);
-					fasstv::LogDebug("Progress: {:.2f}%", (cur_sample / (float)length_in_samples) * 100.f);*/
-				}
-				else {
+		while (SDL_PollEvent(&event) > 0) {
+			switch (event.type) {
+				case SDL_EVENT_QUIT:
 					run = false;
+					break;
+			}
+
+#ifdef FASSTV_DEBUG
+			if (!fasstv::SSTVDecode::The().debug_DebugWindowPump(&event))
+				run = false;
+#endif
+
+			/*if (SDL_GetTicksNS() - timestampNS > 1000000000ul) {
+				SDL_Surface* surfTemp = SDL_AcquireCameraFrame(cam, &timestampNS);
+				fasstv::LogDebug("Trying for a frame, temp: {}, frame: {}", reinterpret_cast<void*>(surfTemp), reinterpret_cast<void*>(surfFrame));
+				if (surfTemp) {
+					fasstv::LogDebug("Got a new frame?");
+					surfFrame = surfTemp;
+					surfTemp = nullptr;
+				}
+
+				if (surfFrame) {
+					fasstv::Rect letterbox = fasstv::Rect::CreateLetterbox(mode->width, mode->lines, {0, 0, surfFrame->w, surfFrame->h});
+
+					if (surfOut) {
+						SDL_free(surfOut);
+						surfOut = nullptr;
+					}
+
+					if (!stretch)
+						surfOut = fasstv::RescaleImage(surfFrame, letterbox.w, letterbox.h, resizeFlags);
+					else
+						surfOut = fasstv::RescaleImage(surfFrame, mode->width, mode->lines, resizeFlags);
+
+					SDL_free(surfFrame);
+					surfFrame = nullptr;
+				}
+
+				timestampNS = SDL_GetTicksNS();
+			}*/
+
+			if (stream != nullptr) {
+				const int minimum_audio = samplerate;
+				if (SDL_GetAudioStreamAvailable(stream) < minimum_audio) {
+					if (!sstvenc.IsProcessingDone() && surfOut != nullptr) {
+						sstvenc.PumpInstructionProcessing(&buff[0], buff_size, {0, 0, surfOut->w, surfOut->h});
+						for (float& smp : buff)
+							smp *= volume;
+						SDL_PutAudioStreamData(stream, buff, sizeof (buff));
+
+						/*std::int32_t cur_x, cur_y;
+						std::uint32_t cur_sample, length_in_samples;
+						sstvenc.GetState(&cur_x, &cur_y, &cur_sample, &length_in_samples);
+						fasstv::LogDebug("Progress: {:.2f}%", (cur_sample / (float)length_in_samples) * 100.f);*/
+					}
+					else {
+						run = false;
+					}
 				}
 			}
+			else if (!decode)
+				run = false;
 		}
-		else {
-			//run = false;
-		}
+
+#ifdef FASSTV_DEBUG
+		fasstv::SSTVDecode::The().debug_DebugWindowRender();
+#endif
 	}
 
 	SDL_free(surfOut);

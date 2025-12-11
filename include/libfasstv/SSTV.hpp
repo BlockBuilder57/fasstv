@@ -151,6 +151,14 @@ namespace fasstv {
 			{ "(8) Porch",      1, 1, Porch, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) }
 		};
 
+		std::vector<Instruction> BLOCK_INSTRUCTIONS = {
+			{ "(1) Sync pulse", 0, 0, Pulse, (InstructionFlags)(NewLine | LengthUsesIndex | PitchUsesIndex) },
+			{ "(2) Porch",      1, 1, Porch, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
+			{ "(3) Red scan",   2, 0, Scan, (InstructionFlags)(LengthUsesIndex | PitchIsDelegated) },
+			{ "(4) Green scan", 2, 1, Scan, (InstructionFlags)(LengthUsesIndex | PitchIsDelegated) },
+			{ "(5) Blue scan",  2, 2, Scan, (InstructionFlags)(LengthUsesIndex | PitchIsDelegated) },
+		};
+
 		std::vector<Mode> MODES = {
 			// Robot
 			{ "Robot 12", 0, ScanType::YRYBY,
@@ -318,7 +326,15 @@ namespace fasstv {
 			  {10.417f, 1.042f, 266.666f}, // pulse, porch, color scan
 			  {1200, 1500}, // pulse, porch
 			  PASOKON_INSTRUCTIONS, 0
-			}
+			},
+
+			// Custom Things
+			{ "Block57", 57, ScanType::RGB,
+			  320, 256, false,
+			{2.f, 0.5f, 100.f}, // pulse, porch, color scan
+			{1200, 1500}, // sync pulse, porch
+			  BLOCK_INSTRUCTIONS, 0
+			},
 		};
 
 		SSTV();
