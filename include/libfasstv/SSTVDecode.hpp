@@ -12,13 +12,22 @@ namespace fasstv {
 
 	class SSTVDecode {
 	public:
+		static constexpr int NUM_WORK_BUFFERS = 3;
+		static constexpr int NUM_CHANNELS = 3; // always 3 for RGB. just nice to reduce magic numbers
+
 		static SSTVDecode& The();
 
+		~SSTVDecode();
+
 		void DecodeSamples(std::vector<float>& samples, int samplerate, SSTV::Mode* expectedMode = nullptr);
+
+		void FreeBuffers();
 
 	private:
 		float AverageFreqAtArea(float pos_ms, int width_samples = 10);
 		bool AverageFreqAtAreaExpected(float pos_ms, float freq_expected, float freq_margin = 50.f, int width_samples = 10, float* freq_back = nullptr);
+
+		float SamplesLengthInSeconds() const { return samples.size() / (float)samplerate; }
 
 #ifdef FASSTV_DEBUG
 		float debug_AverageFreqAtArea(std::string_view text, float pos_ms, int width_samples = 10);
@@ -38,10 +47,15 @@ namespace fasstv {
 		SDL_Renderer* debug_renderer = nullptr;
 		int debug_windowDimensions[2] = { 2048, 768 };
 
-		float debug_graphFreqYScale = 3.f;
+		float debug_graphFreqYScale = 2.f;
 		float debug_graphFreqXScale = 7.f;
 		float debug_graphFreqYPos = 1000.f / debug_graphFreqYScale; // in hertz
 		float debug_graphFreqXPos = 0.f; // in seconds
+
+		bool debug_drawBuffers = true;
+		int debug_drawBuffersType = 0; // 0 - none, 1 - final, 2 - final + rgb, 3 - final + rgb + work
+
+		std::uint32_t debug_GetGraphXPosInSamples() const { return debug_graphFreqXPos * samplerate; }
 #endif
 
 		float* work_buf = nullptr;

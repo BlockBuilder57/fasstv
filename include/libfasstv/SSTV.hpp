@@ -14,12 +14,13 @@ namespace fasstv {
 		static SSTV& The();
 
 		enum InstructionFlags : std::uint8_t {
-			ExtraLine        = 0b000001, // for lines that would be considered "extra"
-			NewLine          = 0b000010, // indicates the start of a new line
-			LengthUsesIndex  = 0b000100, // indicates that the length uses an index value in the mode
-			PitchUsesIndex   = 0b001000, // indicates that the pitch uses an index value in the mode
-			PitchIsDelegated = 0b010000, // indicates that the pitch is delegated to a scan handler
-			PitchIsSweep     = 0b100000  // indicates that the pitch is a simple sweep (SSTV::ScanSweep)
+			ExtraLine        = 0b0000001, // for lines that would be considered "extra"
+			NewLine          = 0b0000010, // indicates the start of a new line
+			LengthUsesIndex  = 0b0000100, // indicates that the length uses an index value in the mode
+			PitchUsesIndex   = 0b0001000, // indicates that the pitch uses an index value in the mode
+			PitchIsDelegated = 0b0010000, // indicates that the pitch is delegated to a scan handler
+			PitchIsSweep     = 0b0100000,  // indicates that the pitch is a simple sweep (SSTV::ScanSweep)
+			ScanIsDoubled    = 0b1000000  // indicates that the scan goes across two lines
 		};
 
 		enum InstructionType : std::uint8_t {
@@ -73,13 +74,13 @@ namespace fasstv {
 			{ "(3) Y scan",                   2, 0, Scan, (InstructionFlags)(LengthUsesIndex | PitchIsDelegated) },
 			{ "(4) \"Even\" separator pulse", 3, 1, Pulse, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
 			{ "(5) Porch",                    4, 2, Porch, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
-			{ "(6) R-Y scan",                 5, 1, Scan, (InstructionFlags)(LengthUsesIndex | PitchIsDelegated) },
+			{ "(6) R-Y scan",                 5, 1, Scan, (InstructionFlags)(LengthUsesIndex | PitchIsDelegated | ScanIsDoubled) },
 			{ "(7) Sync pulse",               0, 0, Pulse, (InstructionFlags)(ExtraLine | NewLine | LengthUsesIndex | PitchUsesIndex) },
 			{ "(8) Sync porch",               1, 1, Porch, (InstructionFlags)(ExtraLine | LengthUsesIndex | PitchUsesIndex) },
 			{ "(9) Y scan",                   2, 0, Scan, (InstructionFlags)(ExtraLine | LengthUsesIndex | PitchIsDelegated) },
 			{ "(10) \"Odd\" separator pulse", 3, 3, Pulse, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
 			{ "(11) Porch",                   4, 2, Porch, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
-			{ "(12) B-Y scan",                5, 2, Scan, (InstructionFlags)(LengthUsesIndex | PitchIsDelegated) },
+			{ "(12) B-Y scan",                5, 2, Scan, (InstructionFlags)(LengthUsesIndex | PitchIsDelegated | ScanIsDoubled) },
 		};
 
 		std::vector<Instruction> ROBOT_4_2_2_INSTRUCTIONS = {
@@ -135,8 +136,8 @@ namespace fasstv {
 			{ "(1) Sync pulse",              0, 0, Pulse, (InstructionFlags)(NewLine | LengthUsesIndex | PitchUsesIndex) },
 			{ "(2) Porch",                   1, 1, Porch, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
 			{ "(3) Y scan (from odd line)",  2, 0, Scan, (InstructionFlags)(LengthUsesIndex | PitchIsDelegated) },
-			{ "(4) R-Y scan",                2, 1, Scan, (InstructionFlags)(LengthUsesIndex | PitchIsDelegated) },
-			{ "(5) B-Y scan",                2, 2, Scan, (InstructionFlags)(LengthUsesIndex | PitchIsDelegated) },
+			{ "(4) R-Y scan",                2, 1, Scan, (InstructionFlags)(LengthUsesIndex | PitchIsDelegated | ScanIsDoubled) },
+			{ "(5) B-Y scan",                2, 2, Scan, (InstructionFlags)(LengthUsesIndex | PitchIsDelegated | ScanIsDoubled) },
 			{ "(6) Y scan (from even line)", 2, 0, Scan, (InstructionFlags)(ExtraLine | NewLine | LengthUsesIndex | PitchIsDelegated) },
 		};
 
@@ -329,8 +330,8 @@ namespace fasstv {
 			},
 
 			// Custom Things
-			{ "Block57", 57, ScanType::RGB,
-			  320, 256, false,
+			{ "Block57", 57, ScanType::YRYBY,
+			  426, 240, false,
 			{2.f, 0.5f, 100.f}, // pulse, porch, color scan
 			{1200, 1500}, // sync pulse, porch
 			  BLOCK_INSTRUCTIONS, 0
