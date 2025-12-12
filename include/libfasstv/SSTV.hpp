@@ -19,7 +19,7 @@ namespace fasstv {
 			LengthUsesIndex  = 0b0000100, // indicates that the length uses an index value in the mode
 			PitchUsesIndex   = 0b0001000, // indicates that the pitch uses an index value in the mode
 			PitchIsDelegated = 0b0010000, // indicates that the pitch is delegated to a scan handler
-			PitchIsSweep     = 0b0100000,  // indicates that the pitch is a simple sweep (SSTV::ScanSweep)
+			PitchIsSweep     = 0b0100000, // indicates that the pitch is a simple sweep (SSTV::ScanSweep)
 			ScanIsDoubled    = 0b1000000  // indicates that the scan goes across two lines
 		};
 

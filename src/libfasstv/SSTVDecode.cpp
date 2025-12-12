@@ -154,8 +154,8 @@ namespace fasstv {
 		float sampMin = sampCenter - (width_samples / debug_graphFreqXScale / 2);
 		float sampMax = sampCenter + (width_samples / debug_graphFreqXScale / 2);
 
-		int freqYExpected = debug_windowDimensions[1]-(freq_expected/debug_graphFreqYScale)+debug_graphFreqYPos;
-		int freqYObserved = debug_windowDimensions[1]-(*freq_back/debug_graphFreqYScale)+debug_graphFreqYPos;
+		int freqYExpected = debug_windowDimensions[1]-(freq_expected/debug_graphFreqYScale)+(debug_graphFreqYPos/debug_graphFreqYScale);
+		int freqYObserved = debug_windowDimensions[1]-(*freq_back/debug_graphFreqYScale)+(debug_graphFreqYPos/debug_graphFreqYScale);
 		int freqYMargin = (freq_margin / 2)/debug_graphFreqYScale;
 
 		// draw expected line
@@ -189,7 +189,7 @@ namespace fasstv {
 		float sampMin = sampCenter - (width_samples / debug_graphFreqXScale / 2);
 		float sampMax = sampCenter + (width_samples / debug_graphFreqXScale / 2);
 
-		int freqYObserved = debug_windowDimensions[1]-(avg/debug_graphFreqYScale)+debug_graphFreqYPos;
+		int freqYObserved = debug_windowDimensions[1]-(avg/debug_graphFreqYScale)+(debug_graphFreqYPos/debug_graphFreqYScale);
 
 		// draw width lines
 		const int lineHeight = 5;
@@ -228,8 +228,6 @@ namespace fasstv {
 		if (!SDL_WasInit(0) || debug_renderer == nullptr)
 			return false;
 
-
-
 		if (ev->type == SDL_EVENT_KEY_DOWN) {
 			float posShift = 0.05f * debug_graphFreqXScale; // seconds!
 			if (ev->key.mod & SDL_KMOD_SHIFT)
@@ -256,7 +254,7 @@ namespace fasstv {
 					break;
 				case SDL_SCANCODE_9:
 				case SDL_SCANCODE_END:
-					debug_graphFreqXPos = SamplesLengthInSeconds();
+					debug_graphFreqXPos = SamplesLengthInSeconds() - ((debug_windowDimensions[0] * debug_graphFreqXScale) / samplerate);
 					break;
 				case SDL_SCANCODE_1:
 				case SDL_SCANCODE_2:
@@ -271,7 +269,23 @@ namespace fasstv {
 		debug_graphFreqXPos = std::clamp(debug_graphFreqXPos, 0.f, SamplesLengthInSeconds());
 		debug_graphFreqYPos = std::clamp(debug_graphFreqYPos, 0.f, 3000.f);
 
+		debug_graphFreqXScale = std::clamp(debug_graphFreqXScale, 0.f, 1024.f);
+
 		return true;
+	}
+
+	float SSTVDecode::debug_GetPosAtMouse() const {
+		float x, y;
+		SDL_GetMouseState(&x, &y);
+
+		return (x * debug_graphFreqXScale / samplerate) + debug_graphFreqXPos;
+	}
+
+	float SSTVDecode::debug_GetFreqAtMouse() const {
+		float x, y;
+		SDL_GetMouseState(&x, &y);
+
+		return ((debug_windowDimensions[1] - y) * debug_graphFreqYScale) + debug_graphFreqYPos;
 	}
 
 	void SSTVDecode::debug_DebugWindowRender() {
@@ -284,6 +298,13 @@ namespace fasstv {
 		// draw pos and scale
 		SDL_SetRenderDrawColor(debug_renderer, 127, 127, 127, 255);
 		SDL_RenderDebugTextFormat(debug_renderer, 0, debug_windowDimensions[1]-8, "t: %.3fs (%d) | Scale: %.2f (%d samples)", debug_graphFreqXPos, (int)(debug_graphFreqXPos * samplerate), debug_graphFreqXScale, (int)(debug_graphFreqXScale * debug_windowDimensions[0]));
+
+		// draw cursor info
+		float x, y;
+		SDL_GetMouseState(&x, &y);
+
+		SDL_RenderDebugTextFormat(debug_renderer, x, y - SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE - 2 - SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE, "%.3fs", debug_GetPosAtMouse());
+		SDL_RenderDebugTextFormat(debug_renderer, x, y - SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE - 2, "%.1fHz", debug_GetFreqAtMouse());
 
 		SDL_RenderPresent(debug_renderer);
 		SDL_SetRenderDrawColor(debug_renderer, 0, 0, 0, 255);
@@ -299,10 +320,10 @@ namespace fasstv {
 		SDL_SetRenderDrawColor(debug_renderer, 80, 80, 80, 255);
 		const int reflines[7] = { 1100, 1200, 1300, 1500, 1900, 2100, 2300 };
 		for(int num : reflines) {
-			SDL_RenderDebugText(debug_renderer, 0, debug_windowDimensions[1] - (num / debug_graphFreqYScale) + debug_graphFreqYPos + 1, std::to_string(num).c_str());
+			SDL_RenderDebugTextFormat(debug_renderer, 0, debug_windowDimensions[1] - (num / debug_graphFreqYScale) + (debug_graphFreqYPos/debug_graphFreqYScale) + 1, "%dHz", num);
 
 			for(int i = 0; i < debug_windowDimensions[0]; i += 2)
-				SDL_RenderPoint(debug_renderer, i, debug_windowDimensions[1] - (num / debug_graphFreqYScale) + debug_graphFreqYPos);
+				SDL_RenderPoint(debug_renderer, i, debug_windowDimensions[1] - (num / debug_graphFreqYScale) + (debug_graphFreqYPos/debug_graphFreqYScale));
 		}
 	}
 
@@ -311,27 +332,77 @@ namespace fasstv {
 			return;
 
 		// debug samples and freq to screen
-		int lastX = -1;
-		const int start = debug_graphFreqXPos * samplerate;
-		for(int i = start; i < samples.size(); i++) {
-			float frequency = samples_freq[i];
+		float startSample = debug_graphFreqXPos * samplerate;
+		float endSample = std::clamp<float>(startSample + (debug_graphFreqXScale * debug_windowDimensions[0]), 0, samples.size());
+		float stepSample = debug_graphFreqXScale;
 
-			int curX = ((i / debug_graphFreqXScale) - (start / debug_graphFreqXScale));
-			if(curX != lastX) {
-				// draw samples
-				// SDL_SetRenderDrawColor(debug_renderer, 127, 0, 0, 255);
-				// SDL_RenderPoint(debug_renderer, curX, debug_windowDimensions[1] - ((samples[i] + 1.0f) * 0.5f) * debug_windowDimensions[1]);
+		float lastSample = -1;
+		float lastFreq = -1;
 
-				// freq
-				SDL_SetRenderDrawColor(debug_renderer, 180, 180, 180, 255);
-				SDL_RenderPoint(debug_renderer, curX, debug_windowDimensions[1] - (frequency / debug_graphFreqYScale) + debug_graphFreqYPos);
+		bool sillyCircumstances = stepSample == 0 || (int)startSample == (int)endSample;
+
+		SDL_SetRenderDrawColor(debug_renderer, 127, 127, 127, 255);
+		for(float p = startSample; p < endSample || sillyCircumstances; p += stepSample) {
+			// prevent infinite lock from floating point problems or 0 stepSample
+			if (sillyCircumstances || p == p + stepSample) {
+				// okay I want to get extra here
+
+				const float length = std::clamp<float>(debug_windowDimensions[1] - 32, 64.f, 128.f);
+				const float sinFactor = 0.8660254f; // sin(60deg)
+				const float cosFactor = 0.5f;       // cos(60deg)
+
+				const float triangleOrigin[2] = {(debug_windowDimensions[0] / 2), (debug_windowDimensions[1] / 2)};
+
+				const float a[2] = {(debug_windowDimensions[0] / 2), (debug_windowDimensions[1] / 2) - length};
+				const float b[2] = {(debug_windowDimensions[0] / 2) + (sinFactor * length), (debug_windowDimensions[1] / 2) + (cosFactor * length)};
+				const float c[2] = {(debug_windowDimensions[0] / 2) - (sinFactor * length), (debug_windowDimensions[1] / 2) + (cosFactor * length)};
+
+				const float exclamationTop[2] = {(debug_windowDimensions[0] / 2), (debug_windowDimensions[1] / 2) - (length * 0.66f)};
+				const float exclamationDot[2] = {(debug_windowDimensions[0] / 2), (debug_windowDimensions[1] / 2) + (cosFactor * length / 2)};
+				const float exclamationDotSize = 5.f;
+
+				SDL_RenderLine(debug_renderer, a[0], a[1], b[0], b[1]);
+				SDL_RenderLine(debug_renderer, b[0], b[1], c[0], c[1]);
+				SDL_RenderLine(debug_renderer, c[0], c[1], a[0], a[1]);
+
+				SDL_RenderLine(debug_renderer, triangleOrigin[0], triangleOrigin[1], exclamationTop[0], exclamationTop[1]);
+				SDL_RenderLine(debug_renderer, exclamationDot[0] - exclamationDotSize, exclamationDot[1] - exclamationDotSize, exclamationDot[0] + exclamationDotSize, exclamationDot[1] + exclamationDotSize);
+				SDL_RenderLine(debug_renderer, exclamationDot[0] + exclamationDotSize, exclamationDot[1] - exclamationDotSize, exclamationDot[0] - exclamationDotSize, exclamationDot[1] + exclamationDotSize);
+
+				SDL_RenderDebugText(debug_renderer, c[0], c[1] + 4, "Invalid graph!");
+
+				const char* why = nullptr;
+				if (stepSample == 0 || ((int)startSample == (int)endSample && (int)startSample != samples_freq.size()))
+					why = "(Zero scale)";
+				else if (startSample < 0 || ((int)startSample == (int)endSample && (int)startSample == samples_freq.size()))
+					why = "(Out of bounds)";
+				else if (p == p + stepSample)
+					why = "(Float imprecision)";
+				else
+					why = "(Dunno)";
+
+				SDL_RenderDebugText(debug_renderer, c[0], c[1] + 4 + SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE + 4, why);
+
+				break;
 			}
 
-			lastX = curX;
+			float frequency = samples_freq[p];
 
-			// stop if we go off-screen
-			if(curX > debug_windowDimensions[0])
-				break;
+			if (p == startSample) {
+				lastSample = p;
+				lastFreq = frequency;
+			}
+
+			float lastX = (lastSample - startSample) / debug_graphFreqXScale;
+			float newX = (p - startSample) / debug_graphFreqXScale;
+
+			float lastY = debug_windowDimensions[1] - (lastFreq / debug_graphFreqYScale) + (debug_graphFreqYPos/debug_graphFreqYScale);
+			float newY = debug_windowDimensions[1] - (frequency / debug_graphFreqYScale) + (debug_graphFreqYPos/debug_graphFreqYScale);
+
+			SDL_RenderLine(debug_renderer, lastX, lastY, newX, newY);
+
+			lastSample = p;
+			lastFreq = frequency;
 		}
 
 		debug_DrawFrequencyReferenceLines();

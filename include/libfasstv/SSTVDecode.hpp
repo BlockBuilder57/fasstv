@@ -40,6 +40,9 @@ namespace fasstv {
 		void debug_DebugWindowRender();
 
 	private:
+		float debug_GetPosAtMouse() const;
+		float debug_GetFreqAtMouse() const;
+
 		void debug_DrawFrequencyReferenceLines();
 		void debug_DrawFrequencyGraph();
 		void debug_DrawBuffersToScreen();
@@ -49,7 +52,7 @@ namespace fasstv {
 
 		float debug_graphFreqYScale = 2.f;
 		float debug_graphFreqXScale = 7.f;
-		float debug_graphFreqYPos = 1000.f / debug_graphFreqYScale; // in hertz
+		float debug_graphFreqYPos = 1000.f; // in hertz
 		float debug_graphFreqXPos = 0.f; // in seconds
 
 		bool debug_drawBuffers = true;
