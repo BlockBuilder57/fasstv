@@ -3,10 +3,12 @@
 #include <libfasstv/SSTV.hpp>
 #include <libfasstv/SSTVDecode.hpp>
 #include <util/Logger.hpp>
+
+#include <math.h>
+#include <cstring>
+
 #include "../../third_party/PicoSSTV/cordic.h"
 #include "../../third_party/PicoSSTV/half_band_filter2.h"
-
-#include <cstring>
 
 #ifdef FASSTV_DEBUG
 #include <SDL3/SDL.h>
@@ -89,7 +91,7 @@ namespace fasstv {
 		FreeBuffers();
 	}
 
-	const float fudge_ms = 6.f; // fudge factor for frequency checking. accounts for the delay from the filter
+	float fudge_ms = 6.f; // fudge factor for frequency checking. accounts for the delay from the filter
 
 	float SSTVDecode::AverageFreqAtArea(float pos_ms, int width_samples /*= 10*/) {
 		if (width_samples <= 1) {
@@ -220,7 +222,11 @@ namespace fasstv {
 		SDL_RenderClear(debug_renderer);
 		SDL_RenderPresent(debug_renderer);
 
+		SDL_SetRenderDrawBlendMode(debug_renderer, SDL_BLENDMODE_BLEND);
 		SDL_SetRenderDrawColor(debug_renderer, 255, 255, 255, 255);
+
+		debug_ResetFrequencyGraphScale();
+
 		return debug_renderer;
 	}
 
@@ -228,33 +234,62 @@ namespace fasstv {
 		if (!SDL_WasInit(0) || debug_renderer == nullptr)
 			return false;
 
+		const float windowWidthInSeconds = debug_GetGraphWidthInSeconds();
+		float posShift = 0.1f * windowWidthInSeconds; // seconds!
+		float scaleChangeUp = debug_graphFreqXScale;
+		float scaleChangeDown = debug_graphFreqXScale * 0.5f;
+		bool scaleChanged = false;
+
+		float mouseX, mouseY;
+		SDL_GetMouseState(&mouseX, &mouseY);
+		static float mouseXScreenPctCenter = NAN;
+		static float mouseDraggingCenter = NAN; // seconds
+		float mouseXScreenPct = mouseX / debug_windowDimensions[0];
+		bool scaleChangedByMouse = false;
+
 		if (ev->type == SDL_EVENT_KEY_DOWN) {
-			float posShift = 0.05f * debug_graphFreqXScale; // seconds!
 			if (ev->key.mod & SDL_KMOD_SHIFT)
-				posShift = 1.0f * debug_graphFreqXScale;
+				posShift = 1.0f * windowWidthInSeconds;
 			else if (ev->key.mod & SDL_KMOD_CTRL)
 				posShift = 1.f / samplerate; // one sample
 
+			scaleChangeUp = ev->key.mod & SDL_KMOD_SHIFT ? scaleChangeUp : 0.1f;
+			scaleChangeDown = ev->key.mod & SDL_KMOD_SHIFT ? scaleChangeDown : 0.1f;
+
 			switch (ev->key.scancode) {
+				case SDL_SCANCODE_Z:
+					debug_ResetFrequencyGraphScale();
+					break;
+				case SDL_SCANCODE_X:
+					debug_ResetFrequencyGraphScale(true);
+					break;
 				case SDL_SCANCODE_UP:
-					debug_graphFreqXScale += ev->key.mod & SDL_KMOD_SHIFT ? debug_graphFreqXScale : 0.1f;
+				case SDL_SCANCODE_W:
+					debug_graphFreqXScale += scaleChangeUp;
+					if (scaleChangeUp != 0)
+						scaleChanged = true;
 					break;
 				case SDL_SCANCODE_DOWN:
-					debug_graphFreqXScale -= ev->key.mod & SDL_KMOD_SHIFT ? debug_graphFreqXScale * 0.5f : 0.1f;
+				case SDL_SCANCODE_S:
+					debug_graphFreqXScale -= scaleChangeDown;
+					if (scaleChangeDown != 0)
+						scaleChanged = true;
 					break;
 				case SDL_SCANCODE_LEFT:
+				case SDL_SCANCODE_A:
 					debug_graphFreqXPos -= posShift;
 					break;
 				case SDL_SCANCODE_RIGHT:
+				case SDL_SCANCODE_D:
 					debug_graphFreqXPos += posShift;
 					break;
 				case SDL_SCANCODE_0:
 				case SDL_SCANCODE_HOME:
-					debug_graphFreqXPos = 0;
+					debug_graphFreqXPos = -windowWidthInSeconds / 2.f;
 					break;
 				case SDL_SCANCODE_9:
 				case SDL_SCANCODE_END:
-					debug_graphFreqXPos = SamplesLengthInSeconds() - ((debug_windowDimensions[0] * debug_graphFreqXScale) / samplerate);
+					debug_graphFreqXPos = SamplesLengthInSeconds() - (windowWidthInSeconds / 2.f);
 					break;
 				case SDL_SCANCODE_1:
 				case SDL_SCANCODE_2:
@@ -264,21 +299,76 @@ namespace fasstv {
 					break;
 			}
 		}
+		else if (ev->type == SDL_EVENT_MOUSE_WHEEL) {
+			if (fabs(ev->wheel.y) > 0.f) {
+				float scrollScale = debug_graphFreqXScale <= 1.0f ? debug_graphFreqXScale : 1.0f;
+				scrollScale *= fabs(ev->wheel.y);
+
+				if (ev->wheel.y < 0)
+					debug_graphFreqXScale += scaleChangeUp * scrollScale;
+				else
+					debug_graphFreqXScale -= scaleChangeDown * scrollScale;
+
+				scaleChanged = true;
+				scaleChangedByMouse = true;
+			}
+			if (fabs(ev->wheel.x) > 0.f) {
+				debug_graphFreqXPos += ev->wheel.x * posShift;
+			}
+		}
+		else if (ev->type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
+			switch (ev->button.button) {
+				case SDL_BUTTON_MIDDLE:
+					mouseXScreenPctCenter = mouseXScreenPct;
+					mouseDraggingCenter = debug_graphFreqXPos;
+					break;
+			}
+		}
+		else if (ev->type == SDL_EVENT_MOUSE_BUTTON_UP) {
+			switch (ev->button.button) {
+				case SDL_BUTTON_MIDDLE:
+					mouseXScreenPctCenter = NAN;
+					mouseDraggingCenter = NAN;
+					break;
+			}
+		}
+
+		if (!isnan(mouseDraggingCenter)) {
+			float diff = mouseXScreenPctCenter - mouseXScreenPct;
+			debug_graphFreqXPos = mouseDraggingCenter + (diff * windowWidthInSeconds);
+		}
+
+		if (scaleChanged) {
+			// calculate a new window width, shift over by half to scale to center of screen
+			float windowWidthInSecondsNew = debug_GetGraphWidthInSeconds();
+			float diff = windowWidthInSeconds - windowWidthInSecondsNew;
+			debug_graphFreqXPos += diff * ((!isnan(mouseDraggingCenter) || scaleChangedByMouse) ? mouseXScreenPct : 0.5f);
+		}
 
 		// clamp
-		debug_graphFreqXPos = std::clamp(debug_graphFreqXPos, 0.f, SamplesLengthInSeconds());
+		debug_graphFreqXPos = std::clamp(debug_graphFreqXPos, -windowWidthInSeconds / 2.f, SamplesLengthInSeconds() - (windowWidthInSeconds / 2.f));
 		debug_graphFreqYPos = std::clamp(debug_graphFreqYPos, 0.f, 3000.f);
 
-		debug_graphFreqXScale = std::clamp(debug_graphFreqXScale, 0.f, 1024.f);
+		// max scale is window width * 2
+		debug_graphFreqXScale = std::clamp(debug_graphFreqXScale, 0.f, (samples_freq.size() / (float)debug_windowDimensions[0]) * 2.0f);
 
 		return true;
 	}
 
-	float SSTVDecode::debug_GetPosAtMouse() const {
+	float SSTVDecode::debug_GetTimeAtMouse() const {
 		float x, y;
 		SDL_GetMouseState(&x, &y);
 
 		return (x * debug_graphFreqXScale / samplerate) + debug_graphFreqXPos;
+	}
+
+	int SSTVDecode::debug_GetSampleAtMouse(bool clamp /*= true*/) const {
+		int val = debug_GetSampleAtTime(debug_GetTimeAtMouse());
+
+		if (!clamp && (val < 0 || val > samples_freq.size() - 1))
+			return -1;
+
+		return std::clamp<int>(val, 0, samples_freq.size() - 1);
 	}
 
 	float SSTVDecode::debug_GetFreqAtMouse() const {
@@ -288,23 +378,24 @@ namespace fasstv {
 		return ((debug_windowDimensions[1] - y) * debug_graphFreqYScale) + debug_graphFreqYPos;
 	}
 
+	SDL_FPoint SSTVDecode::debug_GetScreenPosAtTimeAndFreq(float time, float freq) const {
+		float x = ((time - debug_graphFreqXPos) * samplerate) / debug_graphFreqXScale;
+		float y = debug_windowDimensions[1] - (freq / debug_graphFreqYScale) + (debug_graphFreqYPos/debug_graphFreqYScale);
+		return {x, y};
+	}
+
 	void SSTVDecode::debug_DebugWindowRender() {
 		if (!SDL_WasInit(0) || debug_renderer == nullptr)
 			return;
 
 		debug_DrawFrequencyGraph();
-		debug_DrawBuffersToScreen();
 
 		// draw pos and scale
-		SDL_SetRenderDrawColor(debug_renderer, 127, 127, 127, 255);
-		SDL_RenderDebugTextFormat(debug_renderer, 0, debug_windowDimensions[1]-8, "t: %.3fs (%d) | Scale: %.2f (%d samples)", debug_graphFreqXPos, (int)(debug_graphFreqXPos * samplerate), debug_graphFreqXScale, (int)(debug_graphFreqXScale * debug_windowDimensions[0]));
+		SDL_SetRenderDrawColor(debug_renderer, 255, 255, 255, 127);
+		SDL_RenderDebugTextFormat(debug_renderer, 0, debug_windowDimensions[1] - SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE, "Scale: %.2f (%d samples wide)", debug_graphFreqXScale, debug_GetGraphWidthInSamples());
 
-		// draw cursor info
-		float x, y;
-		SDL_GetMouseState(&x, &y);
-
-		SDL_RenderDebugTextFormat(debug_renderer, x, y - SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE - 2 - SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE, "%.3fs", debug_GetPosAtMouse());
-		SDL_RenderDebugTextFormat(debug_renderer, x, y - SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE - 2, "%.1fHz", debug_GetFreqAtMouse());
+		debug_DrawCursorInfo();
+		debug_DrawBuffersToScreen();
 
 		SDL_RenderPresent(debug_renderer);
 		SDL_SetRenderDrawColor(debug_renderer, 0, 0, 0, 255);
@@ -313,41 +404,117 @@ namespace fasstv {
 		return;
 	}
 
-	void SSTVDecode::debug_DrawFrequencyReferenceLines() {
+	void SSTVDecode::debug_DrawCursorInfo() const {
+		if (!SDL_WasInit(0) || debug_renderer == nullptr)
+			return;
+
+		float x, y;
+		SDL_MouseButtonFlags mouseFlags = SDL_GetMouseState(&x, &y);
+		bool leftClick = mouseFlags & SDL_BUTTON_MASK(SDL_BUTTON_LEFT);
+
+		int smp = debug_GetSampleAtMouse(false);
+		float freq = debug_GetFreqAtMouse();
+
+		// adjust to top of mouse
+		float textX = x + 2, textY = y - SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE - 2;
+
+		if(leftClick && smp != -1) {
+			freq = samples_freq[smp];
+			SDL_FPoint pointy = debug_GetScreenPosAtTimeAndFreq(debug_GetTimeAtMouse(), freq);
+			textX = pointy.x + 2; // unnecessary but I might as well use it
+
+			if(y < pointy.y)
+				textY = pointy.y - SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE - 2;
+			else
+				textY = pointy.y + (SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE * 2) + 2;
+
+			SDL_RenderLine(debug_renderer, x, y, pointy.x, pointy.y);
+		}
+
+		if(smp != -1)
+			SDL_RenderDebugTextFormat(debug_renderer, textX, textY - (SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE * 2), "%dsmp", smp);
+		SDL_RenderDebugTextFormat(debug_renderer, textX, textY - SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE, "%.3fs", debug_GetTimeAtMouse());
+		SDL_RenderDebugTextFormat(debug_renderer, textX, textY, "%.1fHz", freq);
+	}
+
+	void SSTVDecode::debug_DrawTimeReferenceLines() const {
 		if (!SDL_WasInit(0))
 			return;
 
-		SDL_SetRenderDrawColor(debug_renderer, 80, 80, 80, 255);
-		const int reflines[7] = { 1100, 1200, 1300, 1500, 1900, 2100, 2300 };
-		for(int num : reflines) {
-			SDL_RenderDebugTextFormat(debug_renderer, 0, debug_windowDimensions[1] - (num / debug_graphFreqYScale) + (debug_graphFreqYPos/debug_graphFreqYScale) + 1, "%dHz", num);
+		int startSec = std::floor(debug_graphFreqXPos);
+		int endSec = startSec + std::ceil(debug_GetGraphWidthInSeconds()) + 1;
+		float divisions = 1.f / powf(10, floor(log10(debug_GetGraphWidthInSeconds() * 0.5f)));
+		if (divisions > 1000)
+			divisions = 1000;
 
-			for(int i = 0; i < debug_windowDimensions[0]; i += 2)
-				SDL_RenderPoint(debug_renderer, i, debug_windowDimensions[1] - (num / debug_graphFreqYScale) + (debug_graphFreqYPos/debug_graphFreqYScale));
+		const char* scales[4] = {"%.0fs", "%.1fs", "%.2fs", "%.3fs"};
+		int scalesIdx = std::clamp<int>(log10(divisions), 0, (sizeof(scales) / sizeof(char*)) - 1);
+
+		//LogDebug("{}, {}", divisions, log10(divisions));
+
+		SDL_SetRenderDrawColor(debug_renderer, 255, 255, 255, 60);
+
+		for (int t2 = startSec * divisions; t2 < endSec * divisions; t2++) {
+			SDL_FPoint point2 = debug_GetScreenPosAtTimeAndFreq(t2 / divisions, -1);
+
+
+			SDL_RenderDebugTextFormat(debug_renderer, point2.x + 1, 1, scales[scalesIdx], t2 / divisions);
+
+			for (int i = 0; i < debug_windowDimensions[1]; i += 2) {
+				// cool alpha fade, but too extra: ((abs(i - (debug_windowDimensions[1] / 2)) / (float)debug_windowDimensions[1])) * 60
+				SDL_RenderPoint(debug_renderer, point2.x, i);
+			}
+		}
+
+	}
+
+	void SSTVDecode::debug_DrawFrequencyReferenceLines() const {
+		if (!SDL_WasInit(0))
+			return;
+
+		SDL_SetRenderDrawColor(debug_renderer, 255, 255, 255, 60);
+		const int reflines[7] = { 1100, 1200, 1300, 1500, 1900, 2100, 2300 };
+		for (int num : reflines) {
+			SDL_FPoint point = debug_GetScreenPosAtTimeAndFreq(0, num);
+
+			SDL_RenderDebugTextFormat(debug_renderer, 0, point.y + 1, "%dHz", num);
+
+			for (int i = 0; i < debug_windowDimensions[0]; i += 2)
+				SDL_RenderPoint(debug_renderer, i, point.y);
 		}
 	}
 
-	void SSTVDecode::debug_DrawFrequencyGraph() {
+	void SSTVDecode::debug_ResetFrequencyGraphScale(bool fullScreen /*= false*/) {
+		// set scale: 1000-2400Hz, 1 second of samples
+		debug_graphFreqXPos = 0.f;
+		debug_graphFreqXScale = (fullScreen ? samples.size() : samplerate) / (float)debug_windowDimensions[0];
+		debug_graphFreqYPos = 1000.f;
+		debug_graphFreqYScale = 1400.f / debug_windowDimensions[1];
+	}
+
+	void SSTVDecode::debug_DrawFrequencyGraph() const {
 		if (!SDL_WasInit(0))
 			return;
 
 		// debug samples and freq to screen
-		float startSample = debug_graphFreqXPos * samplerate;
+		float startSample = debug_GetGraphXPosInSamples();
 		float endSample = std::clamp<float>(startSample + (debug_graphFreqXScale * debug_windowDimensions[0]), 0, samples.size());
 		float stepSample = debug_graphFreqXScale;
 
 		float lastSample = -1;
 		float lastFreq = -1;
+		float lastAmp = -1;
 
 		bool sillyCircumstances = stepSample == 0 || (int)startSample == (int)endSample;
 
 		SDL_SetRenderDrawColor(debug_renderer, 127, 127, 127, 255);
+
 		for(float p = startSample; p < endSample || sillyCircumstances; p += stepSample) {
 			// prevent infinite lock from floating point problems or 0 stepSample
 			if (sillyCircumstances || p == p + stepSample) {
 				// okay I want to get extra here
 
-				const float length = std::clamp<float>(debug_windowDimensions[1] - 32, 64.f, 128.f);
+				const float length = std::clamp<float>(std::min(debug_windowDimensions[0], debug_windowDimensions[1]) - 128, 32.f, 128.f);
 				const float sinFactor = 0.8660254f; // sin(60deg)
 				const float cosFactor = 0.5f;       // cos(60deg)
 
@@ -386,25 +553,39 @@ namespace fasstv {
 				break;
 			}
 
+			// do nothing while we're off screen
+			if (p < 0)
+				continue;
+
 			float frequency = samples_freq[p];
+			float amplitude = samples[p];
 
 			if (p == startSample) {
 				lastSample = p;
 				lastFreq = frequency;
+				lastAmp = amplitude;
 			}
 
 			float lastX = (lastSample - startSample) / debug_graphFreqXScale;
 			float newX = (p - startSample) / debug_graphFreqXScale;
 
-			float lastY = debug_windowDimensions[1] - (lastFreq / debug_graphFreqYScale) + (debug_graphFreqYPos/debug_graphFreqYScale);
-			float newY = debug_windowDimensions[1] - (frequency / debug_graphFreqYScale) + (debug_graphFreqYPos/debug_graphFreqYScale);
+			float lastFreqY = debug_windowDimensions[1] - (lastFreq / debug_graphFreqYScale) + (debug_graphFreqYPos/debug_graphFreqYScale);
+			float newFreqY = debug_windowDimensions[1] - (frequency / debug_graphFreqYScale) + (debug_graphFreqYPos/debug_graphFreqYScale);
+			float lastAmpY = (debug_windowDimensions[1] / 2) - (lastAmp * debug_windowDimensions[1] * 0.4f);
+			float newAmpY = (debug_windowDimensions[1] / 2) - (amplitude * debug_windowDimensions[1] * 0.4f);
 
-			SDL_RenderLine(debug_renderer, lastX, lastY, newX, newY);
+			SDL_SetRenderDrawColor(debug_renderer, 255, 0, 0, 15);
+			SDL_RenderLine(debug_renderer, lastX, lastAmpY, newX, newAmpY);
+
+			SDL_SetRenderDrawColor(debug_renderer, 127, 127, 127, 255);
+			SDL_RenderLine(debug_renderer, lastX, lastFreqY, newX, newFreqY);
 
 			lastSample = p;
 			lastFreq = frequency;
+			lastAmp = amplitude;
 		}
 
+		debug_DrawTimeReferenceLines();
 		debug_DrawFrequencyReferenceLines();
 	}
 
@@ -503,21 +684,20 @@ namespace fasstv {
 #endif
 
 	void SSTVDecode::DecodeSamples(std::vector<float>& samples, int samplerate, SSTV::Mode* expectedMode /*= nullptr*/) {
-#ifdef FASSTV_DEBUG
-		debug_DebugWindowSetup();
-#endif
-
-		//this->samples = samples;
+		this->samples.clear();
+		this->samples_freq.clear();
 		this->samples = samples;
 		this->samplerate = samplerate;
-		hasDecoded = false;
+		this->hasDecoded = false;
+		this->ourMode = nullptr;
 
 		FreeBuffers();
 
 		cordic_init();
 
-		ourMode = nullptr;
-		samples_freq.clear();
+#ifdef FASSTV_DEBUG
+		debug_DebugWindowSetup();
+#endif
 
 		LogInfo("Getting frequencies...");
 
