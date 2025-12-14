@@ -5,7 +5,7 @@
 #include <SDL3/SDL.h>
 
 #include <libfasstv/libfasstv.hpp>
-#include <util/AudioExport.hpp>
+#include <util/ExportUtilities.hpp>
 #include <util/ImageUtilities.hpp>
 #include <util/Logger.hpp>
 #include <util/Rect.hpp>
@@ -49,23 +49,21 @@ bool ichar_equals(char a, char b) {
 	return std::tolower(static_cast<unsigned char>(a)) == std::tolower(static_cast<unsigned char>(b));
 }
 
-void OutputSamples(fasstv::SSTVEncode& sstvenc, SDL_Surface* surfOut, std::filesystem::path& outputPath, int samplerate, float volume) {
+void OutputSamples(fasstv::SSTVEncode& sstvenc, SDL_Surface* image, std::filesystem::path& outputPath, int samplerate, float volume) {
 	if (outputPath.empty())
 		return;
 
 	// one-shot
 	std::vector<float> samples;
-	sstvenc.RunAllInstructions(samples, {0, 0, surfOut->w, surfOut->h});
+	sstvenc.RunAllInstructions(samples, {0, 0, image->w, image->h});
 	// turn down
 	for (float& smp : samples)
 		smp *= volume;
 
 	// for automatic file naming
-	/*std::string extension = ".wav";
-	if (outputPath.empty()) {
-		outputPath = inputPath;
-		outputPath.replace_filename(inputPath.filename().string() + " " + sstv.GetMode()->name + extension);
-	}*/
+	if (!outputPath.has_extension()) {
+		outputPath.replace_extension(".wav");
+	}
 
 	fasstv::LogInfo("Saving {}...", outputPath.c_str());
 	std::ofstream file(outputPath.string(), std::ios::binary);
@@ -75,6 +73,30 @@ void OutputSamples(fasstv::SSTVEncode& sstvenc, SDL_Surface* surfOut, std::files
 		fasstv::SamplesToAVCodec(samples, samplerate, file);
 	file.close();
 	samples.clear();
+}
+
+void OutputImage(std::vector<float>& samples, fasstv::SSTVDecode& sstvdec, std::filesystem::path& outputPath, int samplerate) {
+	if (outputPath.empty())
+		return;
+
+	sstvdec.DecodeSamples(samples, samplerate);
+	fasstv::SSTV::Mode* mode = sstvdec.GetMode();
+
+	if (mode == nullptr) {
+		fasstv::LogError("Decode failed, cannot export");
+		return;
+	}
+
+	// for automatic file naming
+	//if (!outputPath.has_extension()) {
+		outputPath.replace_extension(".qoi");
+	//}
+
+	fasstv::LogInfo("Saving {}...", outputPath.c_str());
+	std::ofstream file(outputPath.string(), std::ios::binary);
+	if (outputPath.extension() == ".qoi")
+		fasstv::PixelsToQOI(sstvdec.GetPixels(nullptr), mode->width, mode->lines, file);
+	file.close();
 }
 
 int main(int argc, char** argv) {
@@ -275,14 +297,18 @@ int main(int argc, char** argv) {
 		else {
 			//OutputSamples(sstvenc, surfOut, outputPath, samplerate, volume);
 		}
-	}
 
-	// decoding tests
-	std::vector<float> samples;
-	sstvenc.RunAllInstructions(samples, {0, 0, surfOut->w, surfOut->h});
-	for (float& smp : samples)
-		smp *= 0.8;
-	fasstv::SSTVDecode::The().DecodeSamples(samples, samplerate);
+		// decoding tests
+		if (decode) {
+			std::vector<float> samples;
+			sstvenc.RunAllInstructions(samples, {0, 0, surfOut->w, surfOut->h});
+			for (float& smp : samples)
+				smp *= volume;
+
+			fasstv::SSTVDecode& sstvdec = fasstv::SSTVDecode::The();
+			OutputImage(samples, sstvdec, outputPath, samplerate);
+		}
+	}
 
 	const size_t buff_size = 320;
 	static float buff[buff_size];
@@ -355,8 +381,9 @@ int main(int argc, char** argv) {
 					}
 				}
 			}
-			else if (!decode)
+			else {
 				run = false;
+			}
 		}
 
 #ifdef FASSTV_DEBUG

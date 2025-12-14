@@ -910,4 +910,15 @@ namespace fasstv {
 			pixel_buf_size = 0;
 		}
 	}
+
+	std::uint8_t* SSTVDecode::GetPixels(size_t* out_size) const {
+		if (!hasDecoded)
+			return nullptr;
+
+		if (out_size)
+			*out_size = pixel_buf_size;
+
+		return pixel_buf;
+	}
+
 } // namespace fasstv

@@ -2,10 +2,10 @@ add_library(fasstv SHARED
 		SSTV.cpp
 		SSTVEncode.cpp
 		SSTVDecode.cpp
-		ExportUtils.cpp
 		${PROJECT_SOURCE_DIR}/src/util/Logger.cpp
 		${PROJECT_SOURCE_DIR}/src/util/Rect.cpp
 		${PROJECT_SOURCE_DIR}/src/util/StdoutSink.cpp
+		${PROJECT_SOURCE_DIR}/src/util/ExportUtilities.cpp
 
 		${PROJECT_SOURCE_DIR}/third_party/PicoSSTV/cordic.cpp
 		${PROJECT_SOURCE_DIR}/third_party/PicoSSTV/half_band_filter2.cpp

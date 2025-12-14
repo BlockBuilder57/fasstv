@@ -21,9 +21,12 @@ namespace fasstv {
 
 		void DecodeSamples(std::vector<float>& samples, int samplerate, SSTV::Mode* expectedMode = nullptr);
 
-		void FreeBuffers();
+		SSTV::Mode* GetMode() const { return ourMode; }
+		std::uint8_t* GetPixels(size_t* out_size) const;
 
 	private:
+		void FreeBuffers();
+
 		float AverageFreqAtArea(float pos_ms, int width_samples = 10);
 		bool AverageFreqAtAreaExpected(float pos_ms, float freq_expected, float freq_margin = 50.f, int width_samples = 10, float* freq_back = nullptr);
 

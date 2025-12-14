@@ -3,7 +3,7 @@ add_executable(fasstv-cli
 		${PROJECT_SOURCE_DIR}/src/util/Logger.cpp
 		${PROJECT_SOURCE_DIR}/src/util/Rect.cpp
 		${PROJECT_SOURCE_DIR}/src/util/StdoutSink.cpp
-		${PROJECT_SOURCE_DIR}/src/util/AudioExport.cpp
+		${PROJECT_SOURCE_DIR}/src/util/ExportUtilities.cpp
 		${PROJECT_SOURCE_DIR}/src/util/ImageUtilities.cpp
 		)
 
