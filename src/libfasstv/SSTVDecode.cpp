@@ -91,15 +91,17 @@ namespace fasstv {
 		FreeBuffers();
 	}
 
-	float fudge_ms = 6.f; // fudge factor for frequency checking. accounts for the delay from the filter
-
-	float SSTVDecode::AverageFreqAtArea(float pos_ms, int width_samples /*= 10*/) {
+	float SSTVDecode::AverageFreqAtArea(float pos_ms, int width_samples /*= 10*/, std::string debug_text /*= ""*/) {
 		if (width_samples <= 1) {
 			// just get the sample at pos_ms
-			return samples_freq[(pos_ms / 1000.f) * samplerate];
-		}
+			float smp = samples_freq[(pos_ms / 1000.f) * samplerate];
 
-		pos_ms += fudge_ms;
+#ifdef FASSTV_DEBUG
+			debug_AverageFreqInfo.emplace_back(pos_ms, width_samples, NAN, NAN, smp, smp, debug_text);
+#endif
+
+			return smp;
+		}
 
 		int rangeCenter = (pos_ms / 1000.f) * samplerate;
 		int rangeMin = rangeCenter - (width_samples / 2);
@@ -121,10 +123,19 @@ namespace fasstv {
 		}
 		avg /= samplesToAverage.size();
 
+#ifdef FASSTV_DEBUG
+		debug_AverageFreqInfo.emplace_back(pos_ms, width_samples, NAN, NAN, avg, avg, debug_text);
+#endif
+
 		return avg;
 	}
 
-	bool SSTVDecode::AverageFreqAtAreaExpected(float pos_ms, float freq_expected, float freq_margin /*= 50.f*/, int width_samples /*= 10*/, float* freq_back /*= nullptr*/) {
+	bool SSTVDecode::AverageFreqAtAreaExpected(float pos_ms, float freq_expected, float freq_margin /*= 50.f*/, int width_samples /*= 10*/, float* freq_back /*= nullptr*/, std::string debug_text /*= ""*/) {
+		if (freq_expected < 0) {
+			LogError("Looking for a negative frequency...?");
+			return false;
+		}
+
 		float avg = AverageFreqAtArea(pos_ms, width_samples);
 
 		if (freq_back)
@@ -133,6 +144,10 @@ namespace fasstv {
 		bool tooBig = avg > freq_expected + (freq_margin / 2);
 		bool tooSmall = avg < freq_expected - (freq_margin / 2);
 
+#ifdef FASSTV_DEBUG
+		debug_AverageFreqInfo.emplace_back(pos_ms, width_samples, freq_expected, freq_margin, avg, (tooBig || tooSmall) ? 0 : 1, debug_text);
+#endif
+
 		if (tooBig || tooSmall)
 			return false;
 
@@ -140,74 +155,6 @@ namespace fasstv {
 	}
 
 #ifdef FASSTV_DEBUG
-	bool SSTVDecode::debug_AverageFreqAtAreaExpected(std::string_view text, float pos_ms, float freq_expected, float freq_margin /*= 50.f*/, int width_samples /*= 10*/, float* freq_back /*= nullptr*/) {
-		// make a back if we don't have one
-		float backer = 0;
-		if (freq_back == nullptr)
-			freq_back = &backer;
-
-		bool res = AverageFreqAtAreaExpected(pos_ms, freq_expected, freq_margin, width_samples, freq_back);
-
-		if (!SDL_WasInit(0))
-			return res;
-
-		// debug area
-		float sampCenter = ((((pos_ms + fudge_ms) / 1000.f) * samplerate) / debug_graphFreqXScale) - ((debug_graphFreqXPos / debug_graphFreqXScale) * samplerate);
-		float sampMin = sampCenter - (width_samples / debug_graphFreqXScale / 2);
-		float sampMax = sampCenter + (width_samples / debug_graphFreqXScale / 2);
-
-		int freqYExpected = debug_windowDimensions[1]-(freq_expected/debug_graphFreqYScale)+(debug_graphFreqYPos/debug_graphFreqYScale);
-		int freqYObserved = debug_windowDimensions[1]-(*freq_back/debug_graphFreqYScale)+(debug_graphFreqYPos/debug_graphFreqYScale);
-		int freqYMargin = (freq_margin / 2)/debug_graphFreqYScale;
-
-		// draw expected line
-		SDL_SetRenderDrawColor(debug_renderer, 255, 0, 255, 255);
-		SDL_RenderLine(debug_renderer, sampMin, freqYExpected, sampMax, freqYExpected);
-		// draw observed line
-		SDL_SetRenderDrawColor(debug_renderer, 0, 0, 255, 255);
-		SDL_RenderLine(debug_renderer, sampMin, freqYObserved, sampMax, freqYObserved);
-
-		// draw rectangle
-		if (res)
-			SDL_SetRenderDrawColor(debug_renderer, 40, 127, 10, 255);
-		else
-			SDL_SetRenderDrawColor(debug_renderer, 255, 0, 0, 255);
-
-		SDL_FRect rect {sampMin, freqYExpected - freqYMargin, sampMax - sampMin, freqYMargin * 2};
-		SDL_RenderRect(debug_renderer, &rect);
-		SDL_RenderDebugText(debug_renderer, sampMin, freqYExpected + freqYMargin + 1, text.data());
-
-		return res;
-	}
-
-	float SSTVDecode::debug_AverageFreqAtArea(std::string_view text, float pos_ms, int width_samples /*= 10*/) {
-		float avg = AverageFreqAtArea(pos_ms, width_samples);
-
-		if (!SDL_WasInit(0))
-			return avg;
-
-		// debug area
-		float sampCenter = ((((pos_ms + fudge_ms) / 1000.f) * samplerate) / debug_graphFreqXScale) - ((debug_graphFreqXPos / debug_graphFreqXScale) * samplerate);
-		float sampMin = sampCenter - (width_samples / debug_graphFreqXScale / 2);
-		float sampMax = sampCenter + (width_samples / debug_graphFreqXScale / 2);
-
-		int freqYObserved = debug_windowDimensions[1]-(avg/debug_graphFreqYScale)+(debug_graphFreqYPos/debug_graphFreqYScale);
-
-		// draw width lines
-		const int lineHeight = 5;
-		SDL_SetRenderDrawColor(debug_renderer, 255, 0, 255, 255);
-		SDL_RenderLine(debug_renderer, sampMin, freqYObserved - lineHeight, sampMin, freqYObserved + lineHeight);
-		SDL_RenderLine(debug_renderer, sampMax, freqYObserved - lineHeight, sampMax, freqYObserved + lineHeight);
-		SDL_RenderLine(debug_renderer, sampMax, freqYObserved - lineHeight, sampMax, freqYObserved + lineHeight);
-
-		// draw observed
-		SDL_SetRenderDrawColor(debug_renderer, 255, 255, 0, 255);
-		SDL_RenderLine(debug_renderer, sampMax, freqYObserved, sampMax, freqYObserved);
-
-		//SDL_RenderDebugText(debug_renderer, sampMin, freqYExpected + freqYMargin + 1, text.data());
-
-		return avg;
-	}
 
 	SDL_Renderer* SSTVDecode::debug_DebugWindowSetup() {
 		if (!SDL_WasInit(0))
@@ -232,6 +179,9 @@ namespace fasstv {
 
 	bool SSTVDecode::debug_DebugWindowPump(SDL_Event* ev) {
 		if (!SDL_WasInit(0) || debug_renderer == nullptr)
+			return false;
+
+		if (ev->type == SDL_EVENT_QUIT)
 			return false;
 
 		const float windowWidthInSeconds = debug_GetGraphWidthInSeconds();
@@ -292,10 +242,10 @@ namespace fasstv {
 					debug_graphFreqXPos = SamplesLengthInSeconds() - (windowWidthInSeconds / 2.f);
 					break;
 				case SDL_SCANCODE_1:
+					debug_drawBuffersType = ++debug_drawBuffersType > 4 ? 0 : debug_drawBuffersType;
+					break;
 				case SDL_SCANCODE_2:
-				case SDL_SCANCODE_3:
-					int newMode = ev->key.scancode - (SDL_SCANCODE_1 - 1);
-					debug_drawBuffersType = debug_drawBuffersType == newMode ? 0 : newMode;
+					debug_drawAverageFreqType = ++debug_drawAverageFreqType > 4 ? 0 : debug_drawAverageFreqType;
 					break;
 			}
 		}
@@ -378,10 +328,16 @@ namespace fasstv {
 		return ((debug_windowDimensions[1] - y) * debug_graphFreqYScale) + debug_graphFreqYPos;
 	}
 
+	float SSTVDecode::debug_GetScreenPosAtTime(float time) const {
+		return ((time - debug_graphFreqXPos) * samplerate) / debug_graphFreqXScale;
+	}
+
+	float SSTVDecode::debug_GetScreenPosAtFreq(float freq) const {
+		return debug_windowDimensions[1] - (freq / debug_graphFreqYScale) + (debug_graphFreqYPos/debug_graphFreqYScale);
+	}
+
 	SDL_FPoint SSTVDecode::debug_GetScreenPosAtTimeAndFreq(float time, float freq) const {
-		float x = ((time - debug_graphFreqXPos) * samplerate) / debug_graphFreqXScale;
-		float y = debug_windowDimensions[1] - (freq / debug_graphFreqYScale) + (debug_graphFreqYPos/debug_graphFreqYScale);
-		return {x, y};
+		return {debug_GetScreenPosAtTime(time), debug_GetScreenPosAtFreq(freq)};
 	}
 
 	void SSTVDecode::debug_DebugWindowRender() {
@@ -395,6 +351,7 @@ namespace fasstv {
 		SDL_RenderDebugTextFormat(debug_renderer, 0, debug_windowDimensions[1] - SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE, "Scale: %.2f (%d samples wide)", debug_graphFreqXScale, debug_GetGraphWidthInSamples());
 
 		debug_DrawCursorInfo();
+		debug_DrawAverageFreqDisplay();
 		debug_DrawBuffersToScreen();
 
 		SDL_RenderPresent(debug_renderer);
@@ -420,15 +377,14 @@ namespace fasstv {
 
 		if(leftClick && smp != -1) {
 			freq = samples_freq[smp];
-			SDL_FPoint pointy = debug_GetScreenPosAtTimeAndFreq(debug_GetTimeAtMouse(), freq);
-			textX = pointy.x + 2; // unnecessary but I might as well use it
+			float freqOnScreen = debug_GetScreenPosAtFreq(freq);
 
-			if(y < pointy.y)
-				textY = pointy.y - SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE - 2;
+			if(y < freqOnScreen)
+				textY = freqOnScreen - SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE - 2;
 			else
-				textY = pointy.y + (SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE * 2) + 2;
+				textY = freqOnScreen + (SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE * 2) + 2;
 
-			SDL_RenderLine(debug_renderer, x, y, pointy.x, pointy.y);
+			SDL_RenderLine(debug_renderer, x, y, x, freqOnScreen);
 		}
 
 		if(smp != -1)
@@ -455,14 +411,13 @@ namespace fasstv {
 		SDL_SetRenderDrawColor(debug_renderer, 255, 255, 255, 60);
 
 		for (int t2 = startSec * divisions; t2 < endSec * divisions; t2++) {
-			SDL_FPoint point2 = debug_GetScreenPosAtTimeAndFreq(t2 / divisions, -1);
+			float timeX = debug_GetScreenPosAtTime(t2 / divisions);
 
-
-			SDL_RenderDebugTextFormat(debug_renderer, point2.x + 1, 1, scales[scalesIdx], t2 / divisions);
+			SDL_RenderDebugTextFormat(debug_renderer, timeX + 1, 1, scales[scalesIdx], t2 / divisions);
 
 			for (int i = 0; i < debug_windowDimensions[1]; i += 2) {
 				// cool alpha fade, but too extra: ((abs(i - (debug_windowDimensions[1] / 2)) / (float)debug_windowDimensions[1])) * 60
-				SDL_RenderPoint(debug_renderer, point2.x, i);
+				SDL_RenderPoint(debug_renderer, timeX, i);
 			}
 		}
 
@@ -475,12 +430,12 @@ namespace fasstv {
 		SDL_SetRenderDrawColor(debug_renderer, 255, 255, 255, 60);
 		const int reflines[7] = { 1100, 1200, 1300, 1500, 1900, 2100, 2300 };
 		for (int num : reflines) {
-			SDL_FPoint point = debug_GetScreenPosAtTimeAndFreq(0, num);
+			float freqOnScreen = debug_GetScreenPosAtFreq(num);
 
-			SDL_RenderDebugTextFormat(debug_renderer, 0, point.y + 1, "%dHz", num);
+			SDL_RenderDebugTextFormat(debug_renderer, 0, freqOnScreen + 1, "%dHz", num);
 
 			for (int i = 0; i < debug_windowDimensions[0]; i += 2)
-				SDL_RenderPoint(debug_renderer, i, point.y);
+				SDL_RenderPoint(debug_renderer, i, freqOnScreen);
 		}
 	}
 
@@ -589,7 +544,82 @@ namespace fasstv {
 		debug_DrawFrequencyReferenceLines();
 	}
 
-	void SSTVDecode::debug_DrawBuffersToScreen() {
+	void SSTVDecode::debug_DrawAverageFreqDisplay() const {
+		if (!SDL_WasInit(0) || debug_drawAverageFreqType <= 0)
+			return;
+
+		const float viewingMargin = 0; //debug_GetGraphWidthInSeconds() / 16.f;
+
+		for (int i = 0; i < debug_AverageFreqInfo.size(); i++) {
+		 	auto& info = debug_AverageFreqInfo[i];
+
+		 	// haven't reached our window yet...
+		 	if ((info.pos_ms / 1000.f) + ((float)(info.width_samples * 4) / samplerate) <= debug_graphFreqXPos + viewingMargin)
+		 		continue;
+
+		 	// we've gone too far! stop
+		 	if ((info.pos_ms / 1000.f) - ((float)(info.width_samples * 4) / samplerate) >= debug_graphFreqXPos + debug_GetGraphWidthInSeconds() - viewingMargin)
+		 		break;
+
+			if (isnan(info.freq_expected)) {
+				// AverageFreqAtArea
+				if (debug_drawAverageFreqType == 1 || debug_drawAverageFreqType >= 3) {
+					float sampCenter = debug_GetScreenPosAtTime(info.pos_ms / 1000.f);
+					float sampMin = sampCenter - (info.width_samples / debug_graphFreqXScale / 2);
+					float sampMax = sampCenter + (info.width_samples / debug_graphFreqXScale / 2);
+
+					int freqYObserved = debug_GetScreenPosAtFreq(info.freq_back);
+
+					// draw width lines
+					const int lineHeight = 5;
+					SDL_SetRenderDrawColor(debug_renderer, 255, 0, 255, 255);
+					SDL_RenderLine(debug_renderer, sampMin, freqYObserved - lineHeight, sampMin, freqYObserved + lineHeight);
+					SDL_RenderLine(debug_renderer, sampMax, freqYObserved - lineHeight, sampMax, freqYObserved + lineHeight);
+					SDL_RenderLine(debug_renderer, sampMax, freqYObserved - lineHeight, sampMax, freqYObserved + lineHeight);
+
+					// draw observed
+					SDL_SetRenderDrawColor(debug_renderer, 255, 255, 0, 255);
+					SDL_RenderLine(debug_renderer, sampMax, freqYObserved, sampMax, freqYObserved);
+
+					if (!info.debug_text.empty() && debug_drawAverageFreqType >= 4)
+						SDL_RenderDebugText(debug_renderer, sampMin, freqYObserved, info.debug_text.c_str());
+				}
+			}
+			else {
+				// AverageFreqAtAreaExpected
+				if (debug_drawAverageFreqType >= 2) {
+					float sampCenter = debug_GetScreenPosAtTime(info.pos_ms / 1000.f);
+					float sampMin = sampCenter - (info.width_samples / debug_graphFreqXScale / 2);
+					float sampMax = sampCenter + (info.width_samples / debug_graphFreqXScale / 2);
+
+					int freqYExpected = debug_GetScreenPosAtFreq(info.freq_expected);
+					int freqYObserved = debug_GetScreenPosAtFreq(info.freq_back);
+					int freqYMargin = (info.freq_margin / 2)/debug_graphFreqYScale;
+
+					// draw expected line
+					SDL_SetRenderDrawColor(debug_renderer, 255, 0, 255, 255);
+					SDL_RenderLine(debug_renderer, sampMin, freqYExpected, sampMax, freqYExpected);
+					// draw observed line
+					SDL_SetRenderDrawColor(debug_renderer, 0, 0, 255, 255);
+					SDL_RenderLine(debug_renderer, sampMin, freqYObserved, sampMax, freqYObserved);
+
+					// draw rectangle
+					if (info.ret)
+						SDL_SetRenderDrawColor(debug_renderer, 40, 127, 10, 255);
+					else
+						SDL_SetRenderDrawColor(debug_renderer, 255, 0, 0, 255);
+
+					SDL_FRect rect {sampMin, freqYExpected - freqYMargin, sampMax - sampMin, freqYMargin * 2};
+					SDL_RenderRect(debug_renderer, &rect);
+
+					if (!info.debug_text.empty() && debug_drawAverageFreqType >= 4)
+						SDL_RenderDebugText(debug_renderer, sampMin, freqYExpected + freqYMargin + 1, info.debug_text.c_str());
+				}
+			}
+		}
+	}
+
+	void SSTVDecode::debug_DrawBuffersToScreen() const {
 		if (!SDL_WasInit(0) || debug_drawBuffersType <= 0)
 			return;
 
@@ -607,14 +637,16 @@ namespace fasstv {
 			int x = idxLocal % ourMode->width;
 			int y = idxLocal / ourMode->width;
 
-			SDL_SetRenderDrawColor(debug_renderer, pixel_buf[i + 0], pixel_buf[i + 1], pixel_buf[i + 2], 255);
+			std::uint8_t* pixel = &pixel_buf[i];
+
+			SDL_SetRenderDrawColor(debug_renderer, pixel[0], pixel[1], pixel[2], 255);
 			SDL_RenderPoint(debug_renderer, xOff + x, yOff + y);
 
-			if (debug_drawBuffersType > 1) {
+			if (debug_drawBuffersType == 2 || debug_drawBuffersType >= 4) {
 				for (int j = 0; j < NUM_CHANNELS; j++) {
 					xOff = (ourMode->width + padding) * (j+1);
 
-					SDL_SetRenderDrawColor(debug_renderer, pixel_buf[i + j], pixel_buf[i + j], pixel_buf[i + j], 255);
+					SDL_SetRenderDrawColor(debug_renderer, pixel[j], pixel[j], pixel[j], 255);
 					SDL_RenderPoint(debug_renderer, xOff + x, yOff + y);
 				}
 
@@ -625,36 +657,17 @@ namespace fasstv {
 		const char* named_channels = "RGB";
 		SDL_SetRenderDrawColor(debug_renderer, 255, 255, 255, 255);
 		SDL_RenderDebugText(debug_renderer, xOff, yOff + ourMode->lines, named_channels);
-		if (debug_drawBuffersType > 1) {
+		if (debug_drawBuffersType == 2 || debug_drawBuffersType >= 4) {
 			for (int j = 0; j < NUM_CHANNELS; j++) {
 				xOff = (ourMode->width + padding) * (j+1);
 				SDL_RenderDebugTextFormat(debug_renderer, xOff, yOff + ourMode->lines, "%c", named_channels[j]);
 			}
 		}
 
-		/*for(int i = 0; i < 4; i++) {
-			xOff = (ourMode->width + padding) * i;
-
-			for(int x = 0; x < ourMode->width; x++) {
-				for(int y = 0; y < ourMode->lines; y++) {
-					std::uint8_t* pix = &pixel_buf[((y * ourMode->width) + x) * NUM_CHANNELS];
-
-					if(i == 0)
-						SDL_SetRenderDrawColor(debug_renderer, pix[0], pix[1], pix[2], 255);
-					else
-						SDL_SetRenderDrawColor(debug_renderer, pix[i], pix[i], pix[i], 255);
-
-					SDL_RenderPoint(debug_renderer, xOff + x, yOff + y);
-				}
-			}
-
-			SDL_SetRenderDrawColor(debug_renderer, 255, 255, 255, 255);
-			SDL_RenderDebugTextFormat(debug_renderer, xOff, yOff + ourMode->lines, "%c", char_channel[i]);
-		}*/
-
 		// draw working buffers
 		if (debug_drawBuffersType >= 3) {
-			yOff = ourMode->lines + padding;
+			if (debug_drawBuffersType >= 4)
+				yOff = ourMode->lines + padding;
 
 			for (int i = 0; i < modePixelCount * NUM_WORK_BUFFERS; i += NUM_WORK_BUFFERS) {
 				int idxLocal = i / NUM_WORK_BUFFERS;
@@ -662,13 +675,14 @@ namespace fasstv {
 				int x = idxLocal % ourMode->width;
 				int y = idxLocal / ourMode->width;
 
-				std::uint8_t w_pix[NUM_WORK_BUFFERS];
+				float* workVal = &work_buf[i];
+
 				for (int j = 0; j < NUM_WORK_BUFFERS; j++) {
-					w_pix[j] = std::clamp<std::uint8_t>(work_buf[i + j] * 255, 0, 255);
+					std::uint8_t workPix = std::clamp<std::uint8_t>(workVal[j] * 255, 0, 255);
 
 					xOff = (ourMode->width + padding) * (j+1);
 
-					SDL_SetRenderDrawColor(debug_renderer, w_pix[j], w_pix[j], w_pix[j], 255);
+					SDL_SetRenderDrawColor(debug_renderer, workPix, workPix, workPix, 255);
 					SDL_RenderPoint(debug_renderer, xOff + x, yOff + y);
 				}
 			}
@@ -714,7 +728,9 @@ namespace fasstv {
 		sstv.CreateVISHeader(instructions, 0);
 		int instVISEnd = instructions.size();
 
-		float progress_ms = 0.f;
+		float fudge_ms = (35 / (float)samplerate) * 1000.f; // fudge factor for frequency checking. accounts for the delay from the filter
+
+		float progress_ms = 0.f + fudge_ms;
 
 		// let's do VIS and VOX
 		// check for the VIS code, then run CreateInstructions with the mode we figure it is
@@ -733,7 +749,7 @@ namespace fasstv {
 
 			if (i < instVISStart) {
 				//LogDebug("Ins {} tracking at {}ms", ins.name, center);
-				bool res = AverageFreqAtAreaExpected(center, ins.pitch, 30.f, width_samples / 2, &back);
+				AverageFreqAtAreaExpected(center, ins.pitch, 30.f, width_samples / 2, &back, ins.name);
 			}
 			else if (i >= instVISStart + 3 && i < instVISEnd) {
 				// we're in vis, let's read it!
@@ -743,7 +759,7 @@ namespace fasstv {
 
 				if (vis_idx == 0 || vis_idx == 9) {
 					// start/end
-					bool inRange = AverageFreqAtAreaExpected(center, ins.pitch, 30.f, width_samples / 2, &back);
+					bool inRange = AverageFreqAtAreaExpected(center, ins.pitch, 30.f, width_samples / 2, &back, ins.name);
 
 					if (!inRange)
 						LogError("oops, what we thought was VIS didn't start/end properly (wrong pitch, {} vs expected {})", back, ins.pitch);
@@ -751,7 +767,7 @@ namespace fasstv {
 				else if (vis_idx > 0 && vis_idx < 8) {
 					// put the vis code together
 					std::uint8_t bit = vis_idx - 1;
-					bool bitOn = AverageFreqAtAreaExpected(center, SSTV::The().VIS_BIT_FREQS[1], 30.f, width_samples / 2, &back);
+					bool bitOn = AverageFreqAtAreaExpected(center, SSTV::The().VIS_BIT_FREQS[1], 30.f, width_samples / 2, &back, ins.name);
 
 					if (bitOn)
 						vis_code = vis_code | static_cast<std::uint8_t>(1 << bit);
@@ -763,7 +779,7 @@ namespace fasstv {
 					// oh god this may be GCC only?
 					vis_parity = __builtin_parity(vis_code);
 
-					bool bitOn = AverageFreqAtAreaExpected(center, SSTV::The().VIS_BIT_FREQS[1], 30.f, width_samples / 2, &back);
+					bool bitOn = AverageFreqAtAreaExpected(center, SSTV::The().VIS_BIT_FREQS[1], 30.f, width_samples / 2, &back, ins.name);
 
 					if (vis_parity != bitOn) {
 						LogError("bit parity was wrong!");
@@ -815,29 +831,40 @@ namespace fasstv {
 
 			//LogDebug("Ins {} tracking at {}ms", ins.name, center);
 
+
 			float expectedPitch = ins.pitch;
 			if (ins.flags & SSTV::InstructionFlags::PitchUsesIndex) {
 				expectedPitch = ourMode->frequencies[ins.pitch];
 			}
+			else if (ins.flags & SSTV::InstructionFlags::PitchIsDelegated) {
+				// likely a scan
+				expectedPitch = (2300-1500)/2 + 1500;
+			}
+
+			//AverageFreqAtAreaExpected(center, expectedPitch, 50.f, width_samples, &back, ins.name);
 
 			if (ins.flags & SSTV::InstructionFlags::NewLine)
 				cur_line++;
 
 			if (ins.type != SSTV::InstructionType::Scan) {
-				bool res = AverageFreqAtAreaExpected(center, expectedPitch, 30.f, width_samples / 2, &back);
+				AverageFreqAtAreaExpected(center, expectedPitch, ins.type == SSTV::InstructionType::Sync ? 100.f : 40.f, width_samples, &back, ins.name);
 			}
 			else {
+				AverageFreqAtAreaExpected(center, 1900.f, 800.f, width_samples, nullptr, ins.name);
+
+				int field = std::clamp<int>(ins.pitch, 0, 2);
 				float width_sampleSection = ins.length_ms / ourMode->width;
 
 				for (int j = 0; j < ourMode->width; j++) {
 					float* work_val = &work_buf[((cur_line*ourMode->width) + j) * NUM_WORK_BUFFERS];
 
-					float freq = AverageFreqAtArea(progress_ms + (j * width_sampleSection), (width_sampleSection / 1000.f) * samplerate);
+					float freq = AverageFreqAtArea(progress_ms + (j * width_sampleSection), (width_sampleSection / 1000.f) * samplerate, std::format("F{}_P{}", field, j));
 					// normalize to 0.0-1.0
 					// width of range is 2300-1500 = 800
 					float freqAdj = (freq - 1500.f) / 800.f;
 
-					int field = std::clamp<int>(ins.pitch, 0, 2);
+					// todo: put this behind an option
+					freqAdj = std::clamp<float>(freqAdj, 0.f, 1.f);
 
 					if (freq > 0) {
 						if (ins.pitch != field)
@@ -883,9 +910,9 @@ namespace fasstv {
 						for (int i = 0; i < NUM_CHANNELS; i++)
 							YRYBY[i] = std::clamp<std::uint8_t>(work_val[i] * 255, 0, 255);
 
-						pix[0] = 0.003906 * ((298.082 * (YRYBY[0] - 16.0)) + (408.583 *  (YRYBY[1] - 128.0)));
-						pix[1] = 0.003906 * ((298.082 * (YRYBY[0] - 16.0)) + (-100.291 * (YRYBY[2] - 128.0)) + (-208.12 * (YRYBY[1] - 128.0)));
-						pix[2] = 0.003906 * ((298.082 * (YRYBY[0] - 16.0)) + (516.411 *  (YRYBY[2] - 128.0)));
+						pix[0] = std::clamp(0.003906 * ((298.082 * (YRYBY[0] - 16.0)) + (408.583 *  (YRYBY[1] - 128.0))), 0., 255.);
+						pix[1] = std::clamp(0.003906 * ((298.082 * (YRYBY[0] - 16.0)) + (-100.291 * (YRYBY[2] - 128.0)) + (-208.12 * (YRYBY[1] - 128.0))), 0., 255.);
+						pix[2] = std::clamp(0.003906 * ((298.082 * (YRYBY[0] - 16.0)) + (516.411 *  (YRYBY[2] - 128.0))), 0., 255.);
 					default:
 						break;
 				}
@@ -909,6 +936,10 @@ namespace fasstv {
 			pixel_buf = nullptr;
 			pixel_buf_size = 0;
 		}
+
+#ifdef FASSTV_DEBUG
+		debug_AverageFreqInfo.clear();
+#endif
 	}
 
 	std::uint8_t* SSTVDecode::GetPixels(size_t* out_size) const {

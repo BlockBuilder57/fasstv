@@ -10,6 +10,22 @@
 
 namespace fasstv {
 
+	#ifdef FASSTV_DEBUG
+	struct AverageFreqDebugInfo {
+		float pos_ms {};
+		int width_samples {};
+		float freq_expected {};
+		float freq_margin {};
+		float freq_back {}; // callback
+		float ret {};
+		std::string debug_text {};
+	};
+
+	// vaguely new (c++17) thing I didn't know about, thanks CLion
+	// inline keyword works around the one definition rule. easier than defining and using an extern!
+	inline std::vector<AverageFreqDebugInfo> debug_AverageFreqInfo{};
+	#endif
+
 	class SSTVDecode {
 	public:
 		static constexpr int NUM_WORK_BUFFERS = 3;
@@ -27,15 +43,12 @@ namespace fasstv {
 	private:
 		void FreeBuffers();
 
-		float AverageFreqAtArea(float pos_ms, int width_samples = 10);
-		bool AverageFreqAtAreaExpected(float pos_ms, float freq_expected, float freq_margin = 50.f, int width_samples = 10, float* freq_back = nullptr);
+		float AverageFreqAtArea(float pos_ms, int width_samples = 10, std::string debug_text = "");
+		bool AverageFreqAtAreaExpected(float pos_ms, float freq_expected, float freq_margin = 50.f, int width_samples = 10, float* freq_back = nullptr, std::string debug_text = "");
 
 		float SamplesLengthInSeconds() const { return samples.size() / (float)samplerate; }
 
 #ifdef FASSTV_DEBUG
-		float debug_AverageFreqAtArea(std::string_view text, float pos_ms, int width_samples = 10);
-		bool debug_AverageFreqAtAreaExpected(std::string_view text, float pos_ms, float freq_expected, float freq_margin = 50.f, int width_samples = 10, float* freq_back = nullptr);
-
 		SDL_Renderer* debug_DebugWindowSetup();
 
 	public:
@@ -47,6 +60,8 @@ namespace fasstv {
 		int debug_GetSampleAtMouse(bool clamp = true) const;
 		float debug_GetFreqAtMouse() const;
 
+		float debug_GetScreenPosAtTime(float time) const;
+		float debug_GetScreenPosAtFreq(float freq) const;
 		SDL_FPoint debug_GetScreenPosAtTimeAndFreq(float time, float freq) const;
 
 		void debug_DrawCursorInfo() const;
@@ -54,7 +69,8 @@ namespace fasstv {
 		void debug_DrawFrequencyReferenceLines() const;
 		void debug_ResetFrequencyGraphScale(bool fullScreen = false);
 		void debug_DrawFrequencyGraph() const;
-		void debug_DrawBuffersToScreen();
+		void debug_DrawAverageFreqDisplay() const;
+		void debug_DrawBuffersToScreen() const;
 
 		inline float debug_GetTimeAtSample(const int smp) const { return smp / (float)samplerate; }
 		inline int debug_GetSampleAtTime(const float time) const { return time * samplerate; }
@@ -73,7 +89,8 @@ namespace fasstv {
 		float debug_graphFreqXPos = 0.f; // in seconds
 
 		bool debug_drawBuffers = true;
-		int debug_drawBuffersType = 0; // 0 - none, 1 - final, 2 - final + rgb, 3 - final + rgb + work
+		int debug_drawBuffersType = 0; // 0 - none, 1 - final, 2 - final + rgb, 3 - final + work, 4 - final + rgb + work
+		int debug_drawAverageFreqType = 3; // 0 - none, 1 - avg, 2 - avg expected, 3 - both, 4 - with text
 #endif
 
 		float* work_buf = nullptr;

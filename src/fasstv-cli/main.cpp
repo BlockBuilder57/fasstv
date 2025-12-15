@@ -295,7 +295,7 @@ int main(int argc, char** argv) {
 			sstvenc.SetInstructionTypeFilter(fasstv::SSTV::InstructionType::InvalidInstructionType);
 		}
 		else {
-			//OutputSamples(sstvenc, surfOut, outputPath, samplerate, volume);
+			OutputSamples(sstvenc, surfOut, outputPath, samplerate, volume);
 		}
 
 		// decoding tests
@@ -329,8 +329,7 @@ int main(int argc, char** argv) {
 			}
 
 #ifdef FASSTV_DEBUG
-			if (!fasstv::SSTVDecode::The().debug_DebugWindowPump(&event))
-				run = false;
+			run = fasstv::SSTVDecode::The().debug_DebugWindowPump(&event);
 #endif
 
 			/*if (SDL_GetTicksNS() - timestampNS > 1000000000ul) {
@@ -380,9 +379,6 @@ int main(int argc, char** argv) {
 						run = false;
 					}
 				}
-			}
-			else {
-				run = false;
 			}
 		}
 
