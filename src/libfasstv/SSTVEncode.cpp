@@ -167,15 +167,22 @@ namespace fasstv {
 		cur_x = cur_y = 0;
 
 		current_instruction = instructions.data();
+
+		is_done = has_started = false;
 	}
 
 	void SSTVEncode::PumpInstructionProcessing(float* arr, size_t arr_size, Rect rect) {
+		has_started = true;
+
 		for(size_t i = 0; i < arr_size; i++) {
 			int len_samples = current_instruction->length_ms / (timestep * 1000);
 
 			if (cur_sample >= last_instruction_sample + len_samples) {
-				if (!GetNextInstruction())
+				if (!GetNextInstruction()) {
+					// only count as done if we reach our estimated length
+					is_done = last_instruction_sample >= estimated_length_in_samples;
 					break;
+				}
 
 				// recalculate len_samples
 				len_samples = current_instruction->length_ms / (timestep * 1000);
@@ -194,16 +201,9 @@ namespace fasstv {
 		//if (current_mode == nullptr)
 		//	return;
 
-		last_instruction_sample = 0;
-		phase = 0;
+		ResetInstructionProcessing();
 
-		// sampling helpers for sampling the screen
-		// do it all right now to save time!
-		// eventually the "realtime" idea will happen, but let's keep it simple for now
-
-		cur_x = -1;
-		cur_y = -1;
-		current_instruction = instructions.data();
+		has_started = true;
 
 		while(current_instruction < instructions.end().base()) {
 			int len_samples = current_instruction->length_ms / (timestep * 1000);
@@ -254,9 +254,13 @@ namespace fasstv {
 			}
 
 			// go to next instruction
-			if (!GetNextInstruction())
+			if (!GetNextInstruction()) {
+				is_done = true;
 				break;
+			}
 		}
+
+		is_done = true;
 	}
 
 	float SSTVEncode::ScanSweep(SSTV::Mode* mode, int pos_x, bool invert) {

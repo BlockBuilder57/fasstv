@@ -1,11 +1,10 @@
 // Created by block on 2025-12-08.
 
-#include <libfasstv/SSTV.hpp>
-#include <libfasstv/SSTVDecode.hpp>
+#include <libfasstv/libfasstv.hpp>
 #include <util/Logger.hpp>
 
-#include <math.h>
 #include <cstring>
+#include <math.h>
 
 #include "../../third_party/PicoSSTV/cordic.h"
 #include "../../third_party/PicoSSTV/half_band_filter2.h"
@@ -174,15 +173,20 @@ namespace fasstv {
 
 		debug_ResetFrequencyGraphScale();
 
+		debug_window_open = true;
 		return debug_renderer;
 	}
 
-	bool SSTVDecode::debug_DebugWindowPump(SDL_Event* ev) {
-		if (!SDL_WasInit(0) || debug_renderer == nullptr)
-			return false;
+	void SSTVDecode::debug_DebugWindowPump(SDL_Event* ev) {
+		if (!SDL_WasInit(0) || debug_renderer == nullptr) {
+			debug_window_open = false;
+			return;
+		}
 
-		if (ev->type == SDL_EVENT_QUIT)
-			return false;
+		if (ev->type == SDL_EVENT_QUIT) {
+			debug_window_open = false;
+			return;
+		}
 
 		const float windowWidthInSeconds = debug_GetGraphWidthInSeconds();
 		float posShift = 0.1f * windowWidthInSeconds; // seconds!
@@ -202,6 +206,8 @@ namespace fasstv {
 				posShift = 1.0f * windowWidthInSeconds;
 			else if (ev->key.mod & SDL_KMOD_CTRL)
 				posShift = 1.f / samplerate; // one sample
+			else if (ev->key.mod & SDL_KMOD_ALT)
+				posShift = (decoded_mode_meta->loop_length_ms / 1000.f); // one scan
 
 			scaleChangeUp = ev->key.mod & SDL_KMOD_SHIFT ? scaleChangeUp : 0.1f;
 			scaleChangeDown = ev->key.mod & SDL_KMOD_SHIFT ? scaleChangeDown : 0.1f;
@@ -212,6 +218,10 @@ namespace fasstv {
 					break;
 				case SDL_SCANCODE_X:
 					debug_ResetFrequencyGraphScale(true);
+					break;
+				case SDL_SCANCODE_V:
+					if (decoded_mode_meta)
+						debug_graphFreqXScale = ((decoded_mode_meta->loop_length_ms / 1000.f) * samplerate) / (float)debug_windowDimensions[0];
 					break;
 				case SDL_SCANCODE_UP:
 				case SDL_SCANCODE_W:
@@ -239,7 +249,7 @@ namespace fasstv {
 					break;
 				case SDL_SCANCODE_9:
 				case SDL_SCANCODE_END:
-					debug_graphFreqXPos = SamplesLengthInSeconds() - (windowWidthInSeconds / 2.f);
+					debug_graphFreqXPos = TotalSamplesLengthInSeconds() - (windowWidthInSeconds / 2.f);
 					break;
 				case SDL_SCANCODE_1:
 					debug_drawBuffersType = ++debug_drawBuffersType > 4 ? 0 : debug_drawBuffersType;
@@ -296,13 +306,11 @@ namespace fasstv {
 		}
 
 		// clamp
-		debug_graphFreqXPos = std::clamp(debug_graphFreqXPos, -windowWidthInSeconds / 2.f, SamplesLengthInSeconds() - (windowWidthInSeconds / 2.f));
+		debug_graphFreqXPos = std::clamp(debug_graphFreqXPos, -windowWidthInSeconds / 2.f, TotalSamplesLengthInSeconds() - (windowWidthInSeconds / 2.f));
 		debug_graphFreqYPos = std::clamp(debug_graphFreqYPos, 0.f, 3000.f);
 
 		// max scale is window width * 2
 		debug_graphFreqXScale = std::clamp(debug_graphFreqXScale, 0.f, (samples_freq.size() / (float)debug_windowDimensions[0]) * 2.0f);
-
-		return true;
 	}
 
 	float SSTVDecode::debug_GetTimeAtMouse() const {
@@ -313,7 +321,7 @@ namespace fasstv {
 	}
 
 	int SSTVDecode::debug_GetSampleAtMouse(bool clamp /*= true*/) const {
-		int val = debug_GetSampleAtTime(debug_GetTimeAtMouse());
+		int val = GetSampleAtTime(debug_GetTimeAtMouse());
 
 		if (!clamp && (val < 0 || val > samples_freq.size() - 1))
 			return -1;
@@ -623,10 +631,13 @@ namespace fasstv {
 		if (!SDL_WasInit(0) || debug_drawBuffersType <= 0)
 			return;
 
+		if (!pixel_buf || !work_buf)
+			return;
+
 		int xOff = 0;
 		int yOff = 0;
 
-		int modePixelCount = ourMode->width * ourMode->lines;
+		int modePixelCount = decoded_mode->width * decoded_mode->lines;
 
 		const int padding = 8;
 
@@ -634,8 +645,8 @@ namespace fasstv {
 		for (int i = 0; i < modePixelCount * NUM_CHANNELS; i += NUM_CHANNELS) {
 			int idxLocal = i / NUM_CHANNELS;
 
-			int x = idxLocal % ourMode->width;
-			int y = idxLocal / ourMode->width;
+			int x = idxLocal % decoded_mode->width;
+			int y = idxLocal / decoded_mode->width;
 
 			std::uint8_t* pixel = &pixel_buf[i];
 
@@ -644,7 +655,7 @@ namespace fasstv {
 
 			if (debug_drawBuffersType == 2 || debug_drawBuffersType >= 4) {
 				for (int j = 0; j < NUM_CHANNELS; j++) {
-					xOff = (ourMode->width + padding) * (j+1);
+					xOff = (decoded_mode->width + padding) * (j+1);
 
 					SDL_SetRenderDrawColor(debug_renderer, pixel[j], pixel[j], pixel[j], 255);
 					SDL_RenderPoint(debug_renderer, xOff + x, yOff + y);
@@ -656,31 +667,54 @@ namespace fasstv {
 
 		const char* named_channels = "RGB";
 		SDL_SetRenderDrawColor(debug_renderer, 255, 255, 255, 255);
-		SDL_RenderDebugText(debug_renderer, xOff, yOff + ourMode->lines, named_channels);
+		SDL_RenderDebugText(debug_renderer, xOff, yOff + decoded_mode->lines, named_channels);
 		if (debug_drawBuffersType == 2 || debug_drawBuffersType >= 4) {
 			for (int j = 0; j < NUM_CHANNELS; j++) {
-				xOff = (ourMode->width + padding) * (j+1);
-				SDL_RenderDebugTextFormat(debug_renderer, xOff, yOff + ourMode->lines, "%c", named_channels[j]);
+				xOff = (decoded_mode->width + padding) * (j+1);
+				SDL_RenderDebugTextFormat(debug_renderer, xOff, yOff + decoded_mode->lines, "%c", named_channels[j]);
 			}
 		}
 
 		// draw working buffers
 		if (debug_drawBuffersType >= 3) {
 			if (debug_drawBuffersType >= 4)
-				yOff = ourMode->lines + padding;
+				yOff = decoded_mode->lines + padding;
+
+			const char* named_components_Empty[NUM_WORK_BUFFERS] = {"", "", ""};
+			const char* named_components_Monochrome[NUM_WORK_BUFFERS] = {"Value", "", ""};
+			const char* named_components_RGB[NUM_WORK_BUFFERS] = {"Red", "Green", "Blue"};
+			const char* named_components_YRYRB[NUM_WORK_BUFFERS] = {"Luma", "Chroma (Red difference)", "Chroma (Blue difference)"};
+
+			const char** named_components = nullptr;
+
+			switch (decoded_mode->scan_type) {
+				case SSTV::ScanType::Monochrome:
+				case SSTV::ScanType::Sweep:
+					named_components = &named_components_Monochrome[0];
+					break;
+				case SSTV::ScanType::RGB:
+					named_components = &named_components_RGB[0];
+					break;
+				case SSTV::ScanType::YRYBY:
+					named_components = &named_components_YRYRB[0];
+					break;
+				default:
+					named_components = &named_components_Empty[0];
+					break;
+			}
 
 			for (int i = 0; i < modePixelCount * NUM_WORK_BUFFERS; i += NUM_WORK_BUFFERS) {
 				int idxLocal = i / NUM_WORK_BUFFERS;
 
-				int x = idxLocal % ourMode->width;
-				int y = idxLocal / ourMode->width;
+				int x = idxLocal % decoded_mode->width;
+				int y = idxLocal / decoded_mode->width;
 
 				float* workVal = &work_buf[i];
 
 				for (int j = 0; j < NUM_WORK_BUFFERS; j++) {
 					std::uint8_t workPix = std::clamp<std::uint8_t>(workVal[j] * 255, 0, 255);
 
-					xOff = (ourMode->width + padding) * (j+1);
+					xOff = (decoded_mode->width + padding) * (j+1);
 
 					SDL_SetRenderDrawColor(debug_renderer, workPix, workPix, workPix, 255);
 					SDL_RenderPoint(debug_renderer, xOff + x, yOff + y);
@@ -688,22 +722,23 @@ namespace fasstv {
 			}
 
 			for(int i = 0; i < 3; i++) {
-				xOff = (ourMode->width + padding) * (i+1);
+				xOff = (decoded_mode->width + padding) * (i+1);
 
 				SDL_SetRenderDrawColor(debug_renderer, 255, 255, 255, 255);
-				SDL_RenderDebugTextFormat(debug_renderer, xOff, yOff + ourMode->lines, "Work%d", i);
+				SDL_RenderDebugTextFormat(debug_renderer, xOff, yOff + decoded_mode->lines, "[Work%d] %s", i, named_components[i]);
 			}
 		}
 	}
 #endif
 
-	void SSTVDecode::DecodeSamples(std::vector<float>& samples, int samplerate, SSTV::Mode* expectedMode /*= nullptr*/) {
+	void SSTVDecode::DecodeSamples(std::vector<float>& samples, int samplerate, SSTV::Mode* expectedMode /*= nullptr*/, bool expectedFallback /*= false*/) {
 		this->samples.clear();
 		this->samples_freq.clear();
 		this->samples = samples;
 		this->samplerate = samplerate;
-		this->hasDecoded = false;
-		this->ourMode = nullptr;
+		this->has_started = false;
+		this->is_done = false;
+		this->decoded_mode = nullptr;
 
 		FreeBuffers();
 
@@ -712,6 +747,8 @@ namespace fasstv {
 #ifdef FASSTV_DEBUG
 		debug_DebugWindowSetup();
 #endif
+
+		has_started = true;
 
 		LogInfo("Getting frequencies...");
 
@@ -728,9 +765,9 @@ namespace fasstv {
 		sstv.CreateVISHeader(instructions, 0);
 		int instVISEnd = instructions.size();
 
-		float fudge_ms = (35 / (float)samplerate) * 1000.f; // fudge factor for frequency checking. accounts for the delay from the filter
+		int fudge_smp = 35; // fudge factor for frequency checking. accounts for the delay from the filter
 
-		float progress_ms = 0.f + fudge_ms;
+		int progress_smp = 0.f + fudge_smp;
 
 		// let's do VIS and VOX
 		// check for the VIS code, then run CreateInstructions with the mode we figure it is
@@ -744,7 +781,7 @@ namespace fasstv {
 			auto& ins = instructions[i];
 
 			int width_samples = (ins.length_ms / 1000.f) * samplerate;
-			float center = progress_ms + (ins.length_ms / 2.f);
+			float center = (GetTimeAtSample(progress_smp) * 1000.f) + (ins.length_ms / 2.f);
 			float back = 0.f;
 
 			if (i < instVISStart) {
@@ -783,36 +820,57 @@ namespace fasstv {
 
 					if (vis_parity != bitOn) {
 						LogError("bit parity was wrong!");
+						is_done = true;
 						return;
 					}
 				}
 			}
 
-			progress_ms += ins.length_ms;
+			progress_smp += SecondsToSamples(ins.length_ms / 1000.f);
 		}
 
 		// try to get our mode
-		ourMode = SSTV::GetMode(vis_code);
+		decoded_mode = SSTV::GetMode(vis_code);
 
-		if (ourMode != nullptr)
-			LogInfo("Read as VIS code {}, which is mode {}. Assuming this...", vis_code, ourMode->name);
+		if (decoded_mode != nullptr) {
+			LogInfo("Read as VIS code {}, which is mode {}", vis_code, decoded_mode->name);
+			if (expectedMode != nullptr && decoded_mode != expectedMode) {
+				if (expectedFallback) {
+					LogInfo("That wasn't expected, falling back to mode {} and continuing...", vis_code, expectedMode->name);
+					decoded_mode = expectedMode;
+				}
+				else {
+					LogInfo("Mode {} wasn't our expected mode ({}). Exiting...", decoded_mode->name, expectedMode->name);
+					is_done = true;
+					return;
+				}
+			}
+		}
 		else {
 			LogInfo("Read as VIS code {}, which is not something we know. Exiting...", vis_code);
+			is_done = true;
+			return;
+		}
+
+		// we're happy enough with this to get meta info
+		decoded_mode_meta = SSTVMetadata::GetModeMetadata(decoded_mode);
+		if (!decoded_mode_meta) {
+			is_done = true;
 			return;
 		}
 
 		// clear the instructions we had, and rebuild for the new mode
-		sstv.CreateInstructions(instructions, ourMode);
+		sstv.CreateInstructions(instructions, decoded_mode);
 
-		LogInfo("Rebuilt instructions for {}", ourMode->name);
+		LogInfo("Rebuilt instructions for {}", decoded_mode->name);
 
 		// alloc the working buffer (floats)
-		work_buf_size = ourMode->width * ourMode->lines * sizeof(float) * NUM_WORK_BUFFERS;
+		work_buf_size = decoded_mode->width * decoded_mode->lines * sizeof(float) * NUM_WORK_BUFFERS;
 		work_buf = static_cast<float*>(malloc(work_buf_size));
 		memset(work_buf, 0, work_buf_size);
 
 		// alloc the pixel buffer (RGB888)
-		pixel_buf_size = ourMode->width * ourMode->lines * sizeof(std::uint8_t) * NUM_CHANNELS;
+		pixel_buf_size = decoded_mode->width * decoded_mode->lines * sizeof(std::uint8_t) * NUM_CHANNELS;
 		pixel_buf = static_cast<std::uint8_t*>(malloc(pixel_buf_size));
 		memset(pixel_buf, 0, pixel_buf_size);
 
@@ -824,17 +882,16 @@ namespace fasstv {
 		for (int i = instVISEnd; i < loopEnd; i++) {
 			auto& ins = instructions[i];
 
-			float center = progress_ms + (ins.length_ms / 2.f);
-			float back = 0.f;
+			float center = (GetTimeAtSample(progress_smp) * 1000.f) + (ins.length_ms / 2.f);
 			int width_samples = (ins.length_ms / 1000.f) * samplerate;
-			int start_samples = (progress_ms / 1000.f) * samplerate;
 
 			//LogDebug("Ins {} tracking at {}ms", ins.name, center);
 
+			float back = 0.f;
 
 			float expectedPitch = ins.pitch;
 			if (ins.flags & SSTV::InstructionFlags::PitchUsesIndex) {
-				expectedPitch = ourMode->frequencies[ins.pitch];
+				expectedPitch = decoded_mode->frequencies[ins.pitch];
 			}
 			else if (ins.flags & SSTV::InstructionFlags::PitchIsDelegated) {
 				// likely a scan
@@ -847,18 +904,18 @@ namespace fasstv {
 				cur_line++;
 
 			if (ins.type != SSTV::InstructionType::Scan) {
-				AverageFreqAtAreaExpected(center, expectedPitch, ins.type == SSTV::InstructionType::Sync ? 100.f : 40.f, width_samples, &back, ins.name);
+				AverageFreqAtAreaExpected(center, expectedPitch, ins.type == SSTV::InstructionType::Sync ? 200.f : 40.f, width_samples, &back, ins.name);
 			}
 			else {
 				AverageFreqAtAreaExpected(center, 1900.f, 800.f, width_samples, nullptr, ins.name);
 
 				int field = std::clamp<int>(ins.pitch, 0, 2);
-				float width_sampleSection = ins.length_ms / ourMode->width;
+				float width_sampleSection = ins.length_ms / decoded_mode->width;
 
-				for (int j = 0; j < ourMode->width; j++) {
-					float* work_val = &work_buf[((cur_line*ourMode->width) + j) * NUM_WORK_BUFFERS];
+				for (int j = 0; j < decoded_mode->width; j++) {
+					float* work_val = &work_buf[((cur_line*decoded_mode->width) + j) * NUM_WORK_BUFFERS];
 
-					float freq = AverageFreqAtArea(progress_ms + (j * width_sampleSection), (width_sampleSection / 1000.f) * samplerate, std::format("F{}_P{}", field, j));
+					float freq = AverageFreqAtArea((GetTimeAtSample(progress_smp) * 1000.f) + (j * width_sampleSection), (width_sampleSection / 1000.f) * samplerate, std::format("F{}_P{}", field, j));
 					// normalize to 0.0-1.0
 					// width of range is 2300-1500 = 800
 					float freqAdj = (freq - 1500.f) / 800.f;
@@ -872,31 +929,31 @@ namespace fasstv {
 
 						work_val[field] = freqAdj;
 
-						if (ins.flags & SSTV::InstructionFlags::ScanIsDoubled && cur_line < ourMode->lines - 1) {
-							work_val = &work_buf[(((cur_line+1)*ourMode->width) + j) * NUM_WORK_BUFFERS];
+						if (ins.flags & SSTV::InstructionFlags::ScanIsDoubled && cur_line < decoded_mode->lines - 1) {
+							work_val = &work_buf[(((cur_line+1)*decoded_mode->width) + j) * NUM_WORK_BUFFERS];
 							work_val[field] = freqAdj;
 						}
 					}
 				}
 			}
 
-			progress_ms += ins.length_ms;
+			progress_smp += SecondsToSamples(ins.length_ms / 1000.f);
 		}
 
 		LogInfo("Done reading!");
 
 		// make the working buffer into an image
 
-		for (int x = 0; x < ourMode->width; x++) {
-			for (int y = 0; y < ourMode->lines; y++) {
-				float* work_val = &work_buf[((y*ourMode->width) + x) * NUM_WORK_BUFFERS];
-				std::uint8_t* pix = &pixel_buf[((y*ourMode->width) + x) * NUM_CHANNELS];
+		for (int x = 0; x < decoded_mode->width; x++) {
+			for (int y = 0; y < decoded_mode->lines; y++) {
+				float* work_val = &work_buf[((y*decoded_mode->width) + x) * NUM_WORK_BUFFERS];
+				std::uint8_t* pix = &pixel_buf[((y*decoded_mode->width) + x) * NUM_CHANNELS];
 
 				std::uint8_t work_val_byte = std::clamp<std::uint8_t>(work_val[0] * 255, 0, 255);
 
 				// worrying about checking this each time. slow?
 				// todo: make a handler function for each
-				switch (ourMode->scan_type) {
+				switch (decoded_mode->scan_type) {
 					case SSTV::ScanType::Monochrome:
 					case SSTV::ScanType::Sweep:
 						pix[0] = pix[1] = pix[2] = work_val_byte;
@@ -921,7 +978,7 @@ namespace fasstv {
 
 		LogInfo("Assembled image!");
 
-		hasDecoded = true;
+		is_done = true;
 	}
 
 	void SSTVDecode::FreeBuffers() {
@@ -943,7 +1000,7 @@ namespace fasstv {
 	}
 
 	std::uint8_t* SSTVDecode::GetPixels(size_t* out_size) const {
-		if (!hasDecoded)
+		if (!has_started)
 			return nullptr;
 
 		if (out_size)

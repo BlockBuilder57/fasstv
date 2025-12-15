@@ -28,7 +28,8 @@ namespace fasstv {
 		SSTV::Mode* GetMode() const;
 		void GetState(std::int32_t* cur_x, std::int32_t* cur_y, std::uint32_t* cur_sample, std::uint32_t* length_in_samples);
 
-		bool IsProcessingDone() const { return last_instruction_sample >= estimated_length_in_samples; }
+		bool HasStarted() const { return has_started; }
+		bool IsDone() const { return is_done; }
 
 		void ResetInstructionProcessing();
 		void PumpInstructionProcessing(float* arr, size_t arr_size, Rect rect);
@@ -42,6 +43,9 @@ namespace fasstv {
 	   private:
 		bool GetNextInstruction();
 		float GetSamplePitch(Rect rect);
+
+		bool has_started = false;
+		bool is_done = false;
 
 		std::uint32_t samplerate = 44100;
 		float timestep = 1.f / samplerate;
@@ -63,7 +67,6 @@ namespace fasstv {
 		SSTV::InstructionType filter_inst_type {};
 		std::int8_t filter_scan_id {};
 		PixelProviderCallback pixProviderFunc {};
-
 	};
 
 } // namespace fasstv

@@ -8,6 +8,8 @@
 
 #include <vector>
 
+#include "SSTVMetadata.hpp"
+
 namespace fasstv {
 
 	#ifdef FASSTV_DEBUG
@@ -35,10 +37,13 @@ namespace fasstv {
 
 		~SSTVDecode();
 
-		void DecodeSamples(std::vector<float>& samples, int samplerate, SSTV::Mode* expectedMode = nullptr);
+		void DecodeSamples(std::vector<float>& samples, int samplerate, SSTV::Mode* expectedMode = nullptr, bool expectedFallback = false);
 
-		SSTV::Mode* GetMode() const { return ourMode; }
+		SSTV::Mode* GetMode() const { return decoded_mode; }
 		std::uint8_t* GetPixels(size_t* out_size) const;
+
+		bool HasStarted() const { return has_started; }
+		bool IsDone() const { return is_done; }
 
 	private:
 		void FreeBuffers();
@@ -46,14 +51,22 @@ namespace fasstv {
 		float AverageFreqAtArea(float pos_ms, int width_samples = 10, std::string debug_text = "");
 		bool AverageFreqAtAreaExpected(float pos_ms, float freq_expected, float freq_margin = 50.f, int width_samples = 10, float* freq_back = nullptr, std::string debug_text = "");
 
-		float SamplesLengthInSeconds() const { return samples.size() / (float)samplerate; }
+		inline float TotalSamplesLengthInSeconds() const { return samples.size() / (float)samplerate; }
+
+		inline float SamplesToSeconds(const int smp) const { return smp / (float)samplerate; }
+		inline int SecondsToSamples(const float time) const { return time * samplerate; }
+
+		// identical to above
+		inline float GetTimeAtSample(const int smp) const { return SamplesToSeconds(smp); }
+		inline int GetSampleAtTime(const float time) const { return SecondsToSamples(time); }
 
 #ifdef FASSTV_DEBUG
 		SDL_Renderer* debug_DebugWindowSetup();
 
 	public:
-		bool debug_DebugWindowPump(SDL_Event* ev); // return false if done
+		void debug_DebugWindowPump(SDL_Event* ev); // return false if done
 		void debug_DebugWindowRender();
+		bool debug_DebugWindowIsOpen() const { return debug_window_open; }
 
 	private:
 		float debug_GetTimeAtMouse() const;
@@ -72,9 +85,6 @@ namespace fasstv {
 		void debug_DrawAverageFreqDisplay() const;
 		void debug_DrawBuffersToScreen() const;
 
-		inline float debug_GetTimeAtSample(const int smp) const { return smp / (float)samplerate; }
-		inline int debug_GetSampleAtTime(const float time) const { return time * samplerate; }
-
 		inline int debug_GetGraphXPosInSamples() const { return debug_graphFreqXPos * samplerate; }
 		inline int debug_GetGraphWidthInSamples() const { return debug_windowDimensions[0] * debug_graphFreqXScale; }
 		inline float debug_GetGraphWidthInSeconds() const { return debug_GetGraphWidthInSamples() / (float)samplerate; }
@@ -82,6 +92,7 @@ namespace fasstv {
 
 		SDL_Renderer* debug_renderer = nullptr;
 		int debug_windowDimensions[2] = { 2048, 768 };
+		bool debug_window_open = false;
 
 		float debug_graphFreqYScale = 2.f;
 		float debug_graphFreqXScale = 4.f;
@@ -90,7 +101,7 @@ namespace fasstv {
 
 		bool debug_drawBuffers = true;
 		int debug_drawBuffersType = 0; // 0 - none, 1 - final, 2 - final + rgb, 3 - final + work, 4 - final + rgb + work
-		int debug_drawAverageFreqType = 3; // 0 - none, 1 - avg, 2 - avg expected, 3 - both, 4 - with text
+		int debug_drawAverageFreqType = 0; // 0 - none, 1 - avg, 2 - avg expected, 3 - both, 4 - with text
 #endif
 
 		float* work_buf = nullptr;
@@ -102,9 +113,11 @@ namespace fasstv {
 		std::vector<float> samples;
 		std::vector<float> samples_freq;
 
-		SSTV::Mode* ourMode = nullptr;
+		SSTV::Mode* decoded_mode = nullptr;
+		SSTVMetadata::PerModeMetadata* decoded_mode_meta = nullptr;
 
-		bool hasDecoded	= false;
+		bool has_started = false;
+		bool is_done = false;
 	};
 
 } // namespace fasstv

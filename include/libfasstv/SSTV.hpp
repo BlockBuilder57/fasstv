@@ -48,6 +48,12 @@ namespace fasstv {
 			float pitch {}; // pitch or scan identifier
 			InstructionType type {};
 			InstructionFlags flags {};
+
+			bool operator==(std::vector<Instruction>::const_reference value) const {
+				// length_ms and pitch get changed, so let's not bother.
+				// this isn't perfect (ie the robot instructions can get confused) but it's good enough
+				return this->name == value.name && this->type == value.type && this->flags == value.flags;
+			};
 		};
 
 		struct Mode {

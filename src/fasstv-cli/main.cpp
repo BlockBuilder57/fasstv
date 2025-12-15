@@ -67,19 +67,19 @@ void OutputSamples(fasstv::SSTVEncode& sstvenc, SDL_Surface* image, std::filesys
 
 	fasstv::LogInfo("Saving {}...", outputPath.c_str());
 	std::ofstream file(outputPath.string(), std::ios::binary);
-	if (outputPath.extension() == ".wav")
-		fasstv::SamplesToWAV(samples, samplerate, file);
-	else
+	if (outputPath.extension() == ".mp3")
 		fasstv::SamplesToAVCodec(samples, samplerate, file);
+	else
+		fasstv::SamplesToWAV(samples, samplerate, file);
 	file.close();
 	samples.clear();
 }
 
-void OutputImage(std::vector<float>& samples, fasstv::SSTVDecode& sstvdec, std::filesystem::path& outputPath, int samplerate) {
+void OutputImage(std::vector<float>& samples, fasstv::SSTV::Mode* expectedMode, fasstv::SSTVDecode& sstvdec, std::filesystem::path& outputPath, int samplerate) {
 	if (outputPath.empty())
 		return;
 
-	sstvdec.DecodeSamples(samples, samplerate);
+	sstvdec.DecodeSamples(samples, samplerate, expectedMode, true);
 	fasstv::SSTV::Mode* mode = sstvdec.GetMode();
 
 	if (mode == nullptr) {
@@ -123,6 +123,7 @@ int main(int argc, char** argv) {
 	fasstv::SSTVMetadata::BuildMetadata();
 
 	fasstv::SSTVEncode& sstvenc = fasstv::SSTVEncode::The();
+	fasstv::SSTVDecode& sstvdec = fasstv::SSTVDecode::The();
 
 	cag_option_context context;
 	cag_option_init(&context, options, CAG_ARRAY_SIZE(options), argc, argv);
@@ -297,7 +298,7 @@ int main(int argc, char** argv) {
 			sstvenc.SetInstructionTypeFilter(fasstv::SSTV::InstructionType::InvalidInstructionType);
 		}
 		else {
-			OutputSamples(sstvenc, surfOut, outputPath, samplerate, volume);
+			//OutputSamples(sstvenc, surfOut, outputPath, samplerate, volume);
 		}
 
 		// decoding tests
@@ -307,8 +308,7 @@ int main(int argc, char** argv) {
 			for (float& smp : samples)
 				smp *= volume;
 
-			fasstv::SSTVDecode& sstvdec = fasstv::SSTVDecode::The();
-			OutputImage(samples, sstvdec, outputPath, samplerate);
+			OutputImage(samples, sstvenc.GetMode(), sstvdec, outputPath, samplerate);
 		}
 	}
 
@@ -331,7 +331,8 @@ int main(int argc, char** argv) {
 			}
 
 #ifdef FASSTV_DEBUG
-			run = fasstv::SSTVDecode::The().debug_DebugWindowPump(&event);
+			if (sstvdec.debug_DebugWindowIsOpen())
+				fasstv::SSTVDecode::The().debug_DebugWindowPump(&event);
 #endif
 
 			/*if (SDL_GetTicksNS() - timestampNS > 1000000000ul) {
@@ -366,7 +367,7 @@ int main(int argc, char** argv) {
 			if (stream != nullptr) {
 				const int minimum_audio = samplerate;
 				if (SDL_GetAudioStreamAvailable(stream) < minimum_audio) {
-					if (!sstvenc.IsProcessingDone() && surfOut != nullptr) {
+					if (!sstvenc.HasStarted() && surfOut != nullptr) {
 						sstvenc.PumpInstructionProcessing(&buff[0], buff_size, {0, 0, surfOut->w, surfOut->h});
 						for (float& smp : buff)
 							smp *= volume;
@@ -382,6 +383,14 @@ int main(int argc, char** argv) {
 					}
 				}
 			}
+
+			bool considerClosing = (!sstvenc.HasStarted() || sstvenc.IsDone()) && (!sstvdec.HasStarted() || sstvdec.IsDone());
+#ifdef FASSTV_DEBUG
+			considerClosing = considerClosing && !sstvdec.debug_DebugWindowIsOpen();
+#endif
+
+			if (considerClosing)
+				run = false;
 		}
 
 #ifdef FASSTV_DEBUG
