@@ -120,6 +120,8 @@ int main(int argc, char** argv) {
 		return SDL_APP_FAILURE;
 	}
 
+	fasstv::SSTVMetadata::BuildMetadata();
+
 	fasstv::SSTVEncode& sstvenc = fasstv::SSTVEncode::The();
 
 	cag_option_context context;

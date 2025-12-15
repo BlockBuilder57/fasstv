@@ -1,5 +1,6 @@
 add_library(fasstv SHARED
 		SSTV.cpp
+		SSTVMetadata.cpp
 		SSTVEncode.cpp
 		SSTVDecode.cpp
 		${PROJECT_SOURCE_DIR}/src/util/Logger.cpp

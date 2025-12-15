@@ -79,7 +79,6 @@ namespace fasstv {
 		CreateFooter(instructions);
 
 		// Set instruction length ahead of time
-		float totalLength_ms = 0.0f;
 		for (auto& ins : instructions) {
 			float length_ms = ins.length_ms;
 			if(ins.flags & InstructionFlags::LengthUsesIndex) {
@@ -87,10 +86,7 @@ namespace fasstv {
 				//LogDebug("Length from index: {}, {}", ins.length_ms, mode->timings[ins.length_ms]);
 			}
 			ins.length_ms = length_ms;
-			totalLength_ms += length_ms;
 		}
-
-		LogDebug("Mode {} has length: {}s", mode->name, totalLength_ms / 1000.f);
 	}
 
 	void SSTV::CreateVOXHeader(std::vector<Instruction>& instructions) {
