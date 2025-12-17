@@ -88,11 +88,11 @@ namespace fasstv {
 
 
 		MessageSeverity logLevel {
-//#if _DEBUG
+#if FASSTV_DEBUG
 			MessageSeverity::Debug
-//#else
-//			MessageSeverity::Info
-//#endif
+#else
+			MessageSeverity::Info
+#endif
 		};
 		std::vector<Sink*> sinks;
 	};

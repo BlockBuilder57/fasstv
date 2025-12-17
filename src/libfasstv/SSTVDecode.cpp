@@ -1,13 +1,14 @@
 // Created by block on 2025-12-08.
 
-#include <libfasstv/libfasstv.hpp>
-#include <util/Logger.hpp>
+#include <math.h>
 
 #include <cstring>
-#include <math.h>
+#include <libfasstv/libfasstv.hpp>
+#include <shared/Logger.hpp>
 
 #include "../../third_party/PicoSSTV/cordic.h"
 #include "../../third_party/PicoSSTV/half_band_filter2.h"
+#include "fasstv-cli/Options.hpp"
 
 #ifdef FASSTV_DEBUG
 #include <SDL3/SDL.h>
@@ -156,8 +157,10 @@ namespace fasstv {
 #ifdef FASSTV_DEBUG
 
 	SDL_Renderer* SSTVDecode::debug_DebugWindowSetup() {
-		if (!SDL_WasInit(0))
+		if (!SDL_WasInit(0)) {
+			LogDebug("SDL was not init, can't open decode debug window");
 			return nullptr;
+		}
 
 		SDL_Window* window;
 		SDL_CreateWindowAndRenderer("fasstv decoding", debug_windowDimensions[0], debug_windowDimensions[1], 0, &window, &debug_renderer);

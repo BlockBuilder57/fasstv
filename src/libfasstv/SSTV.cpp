@@ -1,7 +1,7 @@
 // Created by block on 5/25/24.
 
 #include <libfasstv/SSTV.hpp>
-#include <util/Logger.hpp>
+#include <shared/Logger.hpp>
 
 #include <cmath>
 #include <fstream>

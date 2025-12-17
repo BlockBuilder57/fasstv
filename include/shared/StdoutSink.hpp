@@ -1,6 +1,6 @@
 #pragma once
 
-#include <util/Logger.hpp>
+#include <shared/Logger.hpp>
 
 namespace fasstv {
 

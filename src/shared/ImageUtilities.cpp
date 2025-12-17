@@ -1,7 +1,7 @@
 // Created by block on 2024-11-14.
 
-#include <util/ImageUtilities.hpp>
-#include <util/Logger.hpp>
+#include <shared/ImageUtilities.hpp>
+#include <shared/Logger.hpp>
 
 #include <SDL3_image/SDL_image.h>
 

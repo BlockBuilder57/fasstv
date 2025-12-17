@@ -2,10 +2,10 @@
 
 #pragma once
 
-#include <util/Logger.hpp>
-#include <util/Rect.hpp>
-
 #include <libfasstv/SSTV.hpp>
+
+#include <shared/Logger.hpp>
+#include <shared/Rect.hpp>
 
 namespace fasstv {
 
@@ -32,7 +32,8 @@ namespace fasstv {
 		bool IsDone() const { return is_done; }
 
 		void ResetInstructionProcessing();
-		void PumpInstructionProcessing(float* arr, size_t arr_size, Rect rect);
+		void FinishInstructionProcessing();
+		void PumpInstructionProcessing(float* arr, size_t arr_len, Rect rect);
 		void RunAllInstructions(std::vector<float>& samples, Rect rect);
 
 		static float ScanSweep(SSTV::Mode* mode, int pos_x, bool invert);

@@ -1,3 +1,0 @@
-[submodule "third_party/cargs"]
-	path = third_party/cargs
-	url = git@github.com:likle/cargs.git

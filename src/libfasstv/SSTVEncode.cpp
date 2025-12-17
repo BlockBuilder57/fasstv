@@ -171,10 +171,23 @@ namespace fasstv {
 		is_done = has_started = false;
 	}
 
-	void SSTVEncode::PumpInstructionProcessing(float* arr, size_t arr_size, Rect rect) {
+	void SSTVEncode::FinishInstructionProcessing() {
+		// lie about being at the end
+		cur_sample = last_instruction_sample;
+		last_instruction_sample = estimated_length_in_samples;
+		current_instruction = instructions.end().base();
+		is_done = true;
+	}
+
+	void SSTVEncode::PumpInstructionProcessing(float* arr, size_t arr_len, Rect rect) {
+		if (current_mode == nullptr) {
+			LogError("Encoder trying to run with no mode!");
+			return;
+		}
+
 		has_started = true;
 
-		for(size_t i = 0; i < arr_size; i++) {
+		for(size_t i = 0; i < arr_len; i++) {
 			int len_samples = current_instruction->length_ms / (timestep * 1000);
 
 			if (cur_sample >= last_instruction_sample + len_samples) {
@@ -198,8 +211,10 @@ namespace fasstv {
 	}
 
 	void SSTVEncode::RunAllInstructions(std::vector<float>& samples, Rect rect) {
-		//if (current_mode == nullptr)
-		//	return;
+		if (current_mode == nullptr) {
+			LogError("Encoder trying to run with no mode!");
+			return;
+		}
 
 		ResetInstructionProcessing();
 

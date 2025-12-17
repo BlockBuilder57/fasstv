@@ -3,8 +3,8 @@
 #include <concepts>
 #include <filesystem>
 #include <fstream>
-#include <util/ExportUtilities.hpp>
-#include <util/Logger.hpp>
+#include <shared/ExportUtilities.hpp>
+#include <shared/Logger.hpp>
 
 #define QOI_IMPLEMENTATION
 #include "../../third_party/qoi/qoi.h"

@@ -2,7 +2,7 @@
 
 #include <libfasstv/SSTVMetadata.hpp>
 
-#include <util/Logger.hpp>
+#include <shared/Logger.hpp>
 
 #include <math.h>
 

@@ -1,4 +1,4 @@
-#include <util/StdoutSink.hpp>
+#include <shared/StdoutSink.hpp>
 
 namespace fasstv {
 	StdoutSink& StdoutSink::The() {
