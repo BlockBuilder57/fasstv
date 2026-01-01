@@ -24,6 +24,7 @@ namespace fasstv {
 		void SetLetterboxLines(bool b);
 		void SetPixelProvider(PixelProviderCallback cb);
 		void SetInstructionTypeFilter(SSTV::InstructionType type, std::int8_t scan_id = -1);
+		void SetNoiseStrength(float strength);
 
 		SSTV::Mode* GetMode() const;
 		void GetState(std::int32_t* cur_x, std::int32_t* cur_y, std::uint32_t* cur_sample, std::uint32_t* length_in_samples);
@@ -44,6 +45,7 @@ namespace fasstv {
 	   private:
 		bool GetNextInstruction();
 		float GetSamplePitch(Rect rect);
+		float GetNoiseSample() const { return (static_cast<float>(rand()) / static_cast<float>(RAND_MAX)) * noise_strength; }
 
 		bool has_started = false;
 		bool is_done = false;
@@ -68,6 +70,8 @@ namespace fasstv {
 		SSTV::InstructionType filter_inst_type {};
 		std::int8_t filter_scan_id {};
 		PixelProviderCallback pixProviderFunc {};
+
+		float noise_strength {};
 	};
 
 } // namespace fasstv

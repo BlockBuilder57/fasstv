@@ -56,6 +56,8 @@ namespace fasstv::cli {
 
 			bool image_stretch = false;
 			int image_resize_method = SWS_BICUBIC;
+
+			float noise_strength = 0.f;
 		} encode;
 
 		struct DecodeOptions {

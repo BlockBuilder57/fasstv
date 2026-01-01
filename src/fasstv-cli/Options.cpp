@@ -40,6 +40,8 @@ namespace fasstv::cli {
 			  .help("Method to use when scaling the image. (Bilinear, bicubic, nearest, etc.) Refer to https://ffmpeg.org/ffmpeg-scaler.html for possible options.");
 			encode_command.add_argument("-p", "--play").flag().store_into(options.play)
 			  .help("If specified, plays audio through default speakers.");
+			encode_command.add_argument("-n", "--noise-strength").store_into(options.encode.noise_strength)
+			  .help("Strength of random noise to apply to the signal.");
 		}
 
 		argparse::ArgumentParser decode_command("decode", "", argparse::default_arguments::help);
@@ -78,6 +80,8 @@ namespace fasstv::cli {
 			  .help("Method to use when scaling the image. (Bilinear, bicubic, nearest, etc.) Refer to https://ffmpeg.org/ffmpeg-scaler.html for possible options.");
 			transcode_command.add_argument("-p", "--play").flag().store_into(options.play)
 			  .help("If specified, plays audio through default speakers.");
+			transcode_command.add_argument("-n", "--noise-strength").store_into(options.encode.noise_strength)
+			  .help("Strength of random noise to apply to the signal.");
 		}
 
 		try {
@@ -145,6 +149,7 @@ namespace fasstv::cli {
 		LogInfo("    Camera mode: {}\n", options.encode.camera_mode);
 		LogInfo("    Stretch image? {}", options.encode.image_stretch);
 		LogInfo("    Resize method: {}\n", options.encode.image_resize_method);
+		LogInfo("    Noise strength: {}\n", options.encode.noise_strength);
 
 		LogInfo("Decode options:");
 		LogInfo("    Camera name: {}\n", options.decode.microphone);

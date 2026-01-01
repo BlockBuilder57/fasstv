@@ -146,6 +146,7 @@ namespace fasstv::cli {
 		sstvenc.SetLetterbox(Rect::CreateLetterbox(mode->width, mode->lines, { 0, 0, surf_out->w, surf_out->h }));
 		sstvenc.SetLetterboxLines(false);
 		sstvenc.SetPixelProvider(&GetSampleFromSurface);
+		sstvenc.SetNoiseStrength(Options::options.encode.noise_strength);
 
 		return EXIT_SUCCESS;
 	}

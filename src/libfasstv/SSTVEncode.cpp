@@ -61,6 +61,10 @@ namespace fasstv {
 		filter_scan_id = scan_id;
 	}
 
+	void SSTVEncode::SetNoiseStrength(float strength) {
+		noise_strength = strength;
+	}
+
 	SSTV::Mode* SSTVEncode::GetMode() const {
 		return current_mode;
 	}
@@ -204,7 +208,12 @@ namespace fasstv {
 			float widthfrac = ((float)(cur_sample - last_instruction_sample) / len_samples);
 			cur_x = current_mode->width * widthfrac;
 
-			arr[i] = GetSamplePitch(rect);
+			// add to the list of samples
+			// note: we do not do any instruction filtering when pumping in realtime
+			float toPush = GetSamplePitch(rect);
+			toPush += GetNoiseSample();
+
+			arr[i] = toPush;
 
 			cur_sample++;
 		}
@@ -254,15 +263,11 @@ namespace fasstv {
 				float widthfrac = ((float)i / len_samples);
 				cur_x = current_mode->width * widthfrac;
 
-
 				// add to the list of samples
 				float toPush = 0.f;
 				if (!doFiltering || (filter_correctType && !filter_wrongScanId))
 					toPush = GetSamplePitch(rect);
-
-				// random noise for testing
-				//float r = static_cast <float> (rand()) / static_cast <float> (RAND_MAX);
-				//toPush += (r * 0.2f);
+				toPush += GetNoiseSample();
 
 				samples.push_back(toPush);
 				cur_sample++;
