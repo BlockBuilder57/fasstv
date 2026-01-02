@@ -30,8 +30,8 @@ namespace fasstv {
 
 	class SSTVDecode {
 	public:
-		static constexpr int NUM_WORK_BUFFERS = 3;
-		static constexpr int NUM_CHANNELS = 3; // always 3 for RGB. just nice to reduce magic numbers
+		static constexpr int NUM_CHANNELS = 4; // bumping to 4 to experiment with alpha values
+		static constexpr int NUM_WORK_BUFFERS = NUM_CHANNELS;
 
 		static SSTVDecode& The();
 
@@ -115,6 +115,8 @@ namespace fasstv {
 
 		SSTV::Mode* decoded_mode = nullptr;
 		SSTVMetadata::PerModeMetadata* decoded_mode_meta = nullptr;
+
+		int highest_field_encountered = -1;
 
 		bool has_started = false;
 		bool is_done = false;

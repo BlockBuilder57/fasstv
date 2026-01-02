@@ -215,6 +215,8 @@ namespace fasstv {
 			scaleChangeUp = ev->key.mod & SDL_KMOD_SHIFT ? scaleChangeUp : 0.1f;
 			scaleChangeDown = ev->key.mod & SDL_KMOD_SHIFT ? scaleChangeDown : 0.1f;
 
+			int typeChange = ev->key.mod & SDL_KMOD_SHIFT ? -1 : 1;
+
 			switch (ev->key.scancode) {
 				case SDL_SCANCODE_Z:
 					debug_ResetFrequencyGraphScale();
@@ -255,10 +257,10 @@ namespace fasstv {
 					debug_graphFreqXPos = TotalSamplesLengthInSeconds() - (windowWidthInSeconds / 2.f);
 					break;
 				case SDL_SCANCODE_1:
-					debug_drawBuffersType = ++debug_drawBuffersType > 4 ? 0 : debug_drawBuffersType;
+					debug_drawBuffersType = debug_drawBuffersType + typeChange > 4 || debug_drawBuffersType + typeChange < 0 ? 0 : debug_drawBuffersType + typeChange;
 					break;
 				case SDL_SCANCODE_2:
-					debug_drawAverageFreqType = ++debug_drawAverageFreqType > 4 ? 0 : debug_drawAverageFreqType;
+					debug_drawAverageFreqType = debug_drawAverageFreqType + typeChange > 4 || debug_drawAverageFreqType + typeChange < 0 ? 0 : debug_drawAverageFreqType + typeChange;
 					break;
 			}
 		}
@@ -653,9 +655,10 @@ namespace fasstv {
 
 			std::uint8_t* pixel = &pixel_buf[i];
 
-			SDL_SetRenderDrawColor(debug_renderer, pixel[0], pixel[1], pixel[2], 255);
+			SDL_SetRenderDrawColor(debug_renderer, pixel[0], pixel[1], pixel[2], pixel[3]);
 			SDL_RenderPoint(debug_renderer, xOff + x, yOff + y);
 
+			// draw individual channels
 			if (debug_drawBuffersType == 2 || debug_drawBuffersType >= 4) {
 				for (int j = 0; j < NUM_CHANNELS; j++) {
 					xOff = (decoded_mode->width + padding) * (j+1);
@@ -668,7 +671,7 @@ namespace fasstv {
 			}
 		}
 
-		const char* named_channels = "RGB";
+		const char* named_channels = "RGBA";
 		SDL_SetRenderDrawColor(debug_renderer, 255, 255, 255, 255);
 		SDL_RenderDebugText(debug_renderer, xOff, yOff + decoded_mode->lines, named_channels);
 		if (debug_drawBuffersType == 2 || debug_drawBuffersType >= 4) {
@@ -683,10 +686,10 @@ namespace fasstv {
 			if (debug_drawBuffersType >= 4)
 				yOff = decoded_mode->lines + padding;
 
-			const char* named_components_Empty[NUM_WORK_BUFFERS] = {"", "", ""};
-			const char* named_components_Monochrome[NUM_WORK_BUFFERS] = {"Value", "", ""};
-			const char* named_components_RGB[NUM_WORK_BUFFERS] = {"Red", "Green", "Blue"};
-			const char* named_components_YRYRB[NUM_WORK_BUFFERS] = {"Luma", "Chroma (Red difference)", "Chroma (Blue difference)"};
+			const char* named_components_Empty[NUM_WORK_BUFFERS] = {"", "", "", ""};
+			const char* named_components_Monochrome[NUM_WORK_BUFFERS] = {"Value", "", "", ""};
+			const char* named_components_RGB[NUM_WORK_BUFFERS] = {"Red", "Green", "Blue", "Alpha"};
+			const char* named_components_YRYRB[NUM_WORK_BUFFERS] = {"Luma", "Chroma (Red difference)", "Chroma (Blue difference)", "Alpha"};
 
 			const char** named_components = nullptr;
 
@@ -724,7 +727,7 @@ namespace fasstv {
 				}
 			}
 
-			for(int i = 0; i < 3; i++) {
+			for(int i = 0; i < NUM_WORK_BUFFERS; i++) {
 				xOff = (decoded_mode->width + padding) * (i+1);
 
 				SDL_SetRenderDrawColor(debug_renderer, 255, 255, 255, 255);
@@ -742,6 +745,7 @@ namespace fasstv {
 		this->has_started = false;
 		this->is_done = false;
 		this->decoded_mode = nullptr;
+		this->highest_field_encountered = -1;
 
 		FreeBuffers();
 
@@ -912,7 +916,10 @@ namespace fasstv {
 			else {
 				AverageFreqAtAreaExpected(center, 1900.f, 800.f, width_samples, nullptr, ins.name);
 
-				int field = std::clamp<int>(ins.pitch, 0, 2);
+				int field = std::clamp<int>(ins.pitch, 0, NUM_WORK_BUFFERS);
+				if (field > highest_field_encountered)
+					highest_field_encountered = field;
+
 				float width_sampleSection = ins.length_ms / decoded_mode->width;
 
 				for (int j = 0; j < decoded_mode->width; j++) {
@@ -950,6 +957,11 @@ namespace fasstv {
 		for (int x = 0; x < decoded_mode->width; x++) {
 			for (int y = 0; y < decoded_mode->lines; y++) {
 				float* work_val = &work_buf[((y*decoded_mode->width) + x) * NUM_WORK_BUFFERS];
+
+				// if we never encountered an alpha channel, make alpha max
+				if (highest_field_encountered < 3)
+					work_val[3] = 1.f;
+
 				std::uint8_t* pix = &pixel_buf[((y*decoded_mode->width) + x) * NUM_CHANNELS];
 
 				std::uint8_t work_val_byte = std::clamp<std::uint8_t>(work_val[0] * 255, 0, 255);
@@ -966,13 +978,14 @@ namespace fasstv {
 							pix[i] = std::clamp<std::uint8_t>(work_val[i] * 255, 0, 255);
 						break;
 					case SSTV::ScanType::YRYBY:
-						std::uint8_t YRYBY[3];
+						std::uint8_t YRYBY[NUM_CHANNELS];
 						for (int i = 0; i < NUM_CHANNELS; i++)
 							YRYBY[i] = std::clamp<std::uint8_t>(work_val[i] * 255, 0, 255);
 
 						pix[0] = std::clamp(0.003906 * ((298.082 * (YRYBY[0] - 16.0)) + (408.583 *  (YRYBY[1] - 128.0))), 0., 255.);
 						pix[1] = std::clamp(0.003906 * ((298.082 * (YRYBY[0] - 16.0)) + (-100.291 * (YRYBY[2] - 128.0)) + (-208.12 * (YRYBY[1] - 128.0))), 0., 255.);
 						pix[2] = std::clamp(0.003906 * ((298.082 * (YRYBY[0] - 16.0)) + (516.411 *  (YRYBY[2] - 128.0))), 0., 255.);
+						pix[3] = YRYBY[3];
 					default:
 						break;
 				}

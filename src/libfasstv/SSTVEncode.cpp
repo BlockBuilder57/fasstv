@@ -318,7 +318,7 @@ namespace fasstv {
 			return 0;
 
 		float pitch = 1500.f;
-		int pass = std::clamp((int)ins->pitch, 0, 2); // modes 0-2 correspond to Y/R-Y/B-Y
+		int pass = std::clamp((int)ins->pitch, 0, 3); // modes 0-3 correspond to R/G/B/A
 
 		if(sampled_pixel == nullptr) {
 			if (SSTVEncode::The().letterboxLines) {
@@ -329,6 +329,9 @@ namespace fasstv {
 					pitch += 800.f;
 			}
 		} else {
+			if (pass == 3) // A can immediately return
+				return 1500. + ((sampled_pixel[pass] / 255.) * 800.);
+
 			// for bytes - (2300-1500 / 255)
 			// martin is GBR
 			pitch = (1500. + (sampled_pixel[pass] * 3.1372549));
@@ -339,11 +342,12 @@ namespace fasstv {
 
 	float SSTVEncode::ScanYRYBY(SSTV::Instruction* ins, int pos_x, int pos_y, std::uint8_t* sampled_pixel) {
 		float pitch = 1500.f;
-		int pass = std::clamp((int)ins->pitch, 0, 2); // modes 0-2 correspond to Y/R-Y/B-Y
+		int pass = std::clamp((int)ins->pitch, 0, 3); // modes 0-2 correspond to Y/R-Y/B-Y/A
 
 		std::uint8_t R = 0;
 		std::uint8_t G = 0;
 		std::uint8_t B = 0;
+		std::uint8_t A = 255;
 
 		if(sampled_pixel == nullptr) {
 			if (SSTVEncode::The().letterboxLines) {
@@ -358,6 +362,7 @@ namespace fasstv {
 			R = sampled_pixel[0];
 			G = sampled_pixel[1];
 			B = sampled_pixel[2];
+			A = sampled_pixel[3];
 		}
 
 		// much more complex stuff here
@@ -378,6 +383,9 @@ namespace fasstv {
 				// B-Y
 				factor = (128.0 + (0.003906 * ((-37.945 * R) + (-74.494 * G) + (112.439 * B))));
 				break;
+			case 3:
+				// A can immediately return
+				return 1500. + ((A / 255.) * 800.);;
 		}
 
 		pitch = (1500. + (factor * 3.1372549));

@@ -167,6 +167,21 @@ namespace fasstv {
 			{ "(5) Blue scan",  2, 2, Scan,  (InstructionFlags)(LengthUsesIndex | PitchIsDelegated) },
 		};
 
+		std::vector<Instruction> BLOCK_ROBOT_INSTRUCTIONS = {
+			{ "(1) Sync pulse",       0, 0, Sync,  (InstructionFlags)(NewLine | LengthUsesIndex | PitchUsesIndex) },
+			{ "(2) Sync porch",       1, 1, Sync,  (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
+			{ "(3) Y scan",           2, 0, Scan,  (InstructionFlags)(LengthUsesIndex | PitchIsDelegated) },
+			{ "(4) Separator pulse",  3, 1, Pulse, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
+			{ "(5) Porch",            4, 2, Porch, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
+			{ "(6) R-Y scan",         5, 1, Scan,  (InstructionFlags)(LengthUsesIndex | PitchIsDelegated) },
+			{ "(7) Separator pulse",  3, 3, Pulse, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
+			{ "(8) Porch",            4, 2, Porch, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
+			{ "(9) B-Y scan",         5, 2, Scan,  (InstructionFlags)(LengthUsesIndex | PitchIsDelegated) },
+			{ "(10) Separator pulse", 3, 3, Pulse, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
+			{ "(11) Porch",           4, 2, Porch, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
+			{ "(12) A scan",          2, 3, Scan,  (InstructionFlags)(LengthUsesIndex | PitchIsDelegated) },
+		};
+
 		std::vector<Mode> MODES = {
 			// Robot
 			{ "Robot 12", 0, ScanType::YRYBY,
@@ -345,10 +360,10 @@ namespace fasstv {
 			},
 
 			{ "Robot 57", 58, ScanType::YRYBY,
-				1280, 720, false,
-				{9.0f, 3.0f, 88.0f, 4.5f, 1.5f, 44.0f}, // sync pulse, sync porch, Y scan, separator pulse, porch, R-Y/B-Y scan
+				1280/4, 720/4, false,
+				{9.0f, 3.0f, 88.0f, 4.5f, 1.5f, 44.0f}, // sync pulse, sync porch, Y/A scan, separator pulse, porch, R-Y/B-Y scan
 				{1200, 1500, 1900, 2300}, // sync pulse, sync porch/even separator pulse, porch, odd separator pulse
-				ROBOT_4_2_2_INSTRUCTIONS, 0
+				BLOCK_ROBOT_INSTRUCTIONS, 0
 			},
 		};
 

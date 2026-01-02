@@ -246,7 +246,7 @@ namespace fasstv {
 		qoi_desc desc = {
 			.width = width,
 			.height = height,
-			.channels = 3,
+			.channels = 4,
 			.colorspace = QOI_SRGB
 		};
 
