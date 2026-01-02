@@ -18,9 +18,12 @@ namespace fasstv::cli {
 		void OutputSamples(std::filesystem::path& outputPath);
 		void OutputImage(std::vector<float>& samples, std::filesystem::path& outputPath);
 
+		SSTVEncode& Encode_Setup();
+		SSTVDecode& Decode_Setup(SSTV::Mode* expectedMode = nullptr);
+
 		int Audio_Setup();
 		void Audio_PumpOutputStream();
-		int Encode_RescaleAndLetterboxImage();
+		int Encode_SetModeRescaleAndLetterboxImage();
 
 		bool sdl_run = true;
 		SDL_Event event {};

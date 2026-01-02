@@ -14,7 +14,7 @@ namespace fasstv {
 
 	#ifdef FASSTV_DEBUG
 	struct AverageFreqDebugInfo {
-		float pos_ms {};
+		int pos_samples {};
 		int width_samples {};
 		float freq_expected {};
 		float freq_margin {};
@@ -37,7 +37,11 @@ namespace fasstv {
 
 		~SSTVDecode();
 
-		void DecodeSamples(std::vector<float>& samples, int samplerate, SSTV::Mode* expectedMode = nullptr, bool expectedFallback = false);
+		void SetSampleRate(int samplerate);
+		void SetExpectedMode(SSTV::Mode* expectedMode, bool expectedFallback = false);
+
+		void PumpDecoding(std::vector<float>& samples);
+		void DecodeAllSamples(std::vector<float>& samples);
 
 		SSTV::Mode* GetMode() const { return decoded_mode; }
 		std::uint8_t* GetPixels(size_t* out_size) const;
@@ -48,8 +52,8 @@ namespace fasstv {
 	private:
 		void FreeBuffers();
 
-		float AverageFreqAtArea(float pos_ms, int width_samples = 10, std::string debug_text = "");
-		bool AverageFreqAtAreaExpected(float pos_ms, float freq_expected, float freq_margin = 50.f, int width_samples = 10, float* freq_back = nullptr, std::string debug_text = "");
+		float AverageFreqAtArea(int pos_samples, int width_samples = 10, std::string debug_text = "");
+		bool AverageFreqAtAreaExpected(int pos_samples, float freq_expected, float freq_margin = 50.f, int width_samples = 10, float* freq_back = nullptr, std::string debug_text = "");
 
 		inline float TotalSamplesLengthInSeconds() const { return samples.size() / (float)samplerate; }
 
@@ -61,9 +65,9 @@ namespace fasstv {
 		inline int GetSampleAtTime(const float time) const { return SecondsToSamples(time); }
 
 #ifdef FASSTV_DEBUG
+	public:
 		SDL_Renderer* debug_DebugWindowSetup();
 
-	public:
 		void debug_DebugWindowPump(SDL_Event* ev); // return false if done
 		void debug_DebugWindowRender();
 		bool debug_DebugWindowIsOpen() const { return debug_window_open; }
@@ -74,6 +78,7 @@ namespace fasstv {
 		float debug_GetFreqAtMouse() const;
 
 		float debug_GetScreenPosAtTime(float time) const;
+		float debug_GetScreenPosAtSample(int smp) const;
 		float debug_GetScreenPosAtFreq(float freq) const;
 		SDL_FPoint debug_GetScreenPosAtTimeAndFreq(float time, float freq) const;
 
@@ -113,8 +118,12 @@ namespace fasstv {
 		std::vector<float> samples;
 		std::vector<float> samples_freq;
 
+		SSTV::Mode* expected_mode = nullptr;
+		bool expected_mode_fallback = false;
+
 		SSTV::Mode* decoded_mode = nullptr;
 		SSTVMetadata::PerModeMetadata* decoded_mode_meta = nullptr;
+		std::vector<SSTV::Instruction> instructions;
 
 		int highest_field_encountered = -1;
 

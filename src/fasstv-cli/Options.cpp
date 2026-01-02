@@ -125,11 +125,11 @@ namespace fasstv::cli {
 					}
 				}
 			}
-
-			// fallback to Robot 36 if no mode set
-			if (options.mode == nullptr)
-				options.mode = SSTV::GetMode("Robot 36");
 		}
+
+		// fallback to Robot 36 if no mode set
+		if (options.mode == nullptr)
+			options.mode = SSTV::GetMode("Robot 36");
 
 		return EXIT_SUCCESS;
 	}

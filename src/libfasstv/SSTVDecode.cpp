@@ -77,6 +77,13 @@ int16_t rolling_freq_from_sample(int16_t audio, int samplerate)
 
 	static uint32_t smoothed_freq_at_sample = 0;
 	smoothed_freq_at_sample = ((smoothed_freq_at_sample << 3) + freq_at_sample - smoothed_freq_at_sample) >> 3;
+
+	// make sensible values for out of bounds
+	if (smoothed_freq_at_sample < 1000u)
+		return 0;
+	else if (smoothed_freq_at_sample > 2400u)
+		return 3500;
+
 	return std::min(std::max(smoothed_freq_at_sample, 1000u), 2400u);
 }
 
@@ -91,19 +98,28 @@ namespace fasstv {
 		FreeBuffers();
 	}
 
-	float SSTVDecode::AverageFreqAtArea(float pos_ms, int width_samples /*= 10*/, std::string debug_text /*= ""*/) {
+	void SSTVDecode::SetSampleRate(int samplerate) {
+		this->samplerate = samplerate;
+	}
+
+	void SSTVDecode::SetExpectedMode(SSTV::Mode* expectedMode, bool expectedFallback /*= false*/) {
+		expected_mode = expectedMode;
+		expected_mode_fallback = expectedFallback;
+	}
+
+	float SSTVDecode::AverageFreqAtArea(int pos_samples, int width_samples /*= 10*/, std::string debug_text /*= ""*/) {
 		if (width_samples <= 1) {
 			// just get the sample at pos_ms
-			float smp = samples_freq[(pos_ms / 1000.f) * samplerate];
+			float smp = samples_freq[pos_samples];
 
 #ifdef FASSTV_DEBUG
-			debug_AverageFreqInfo.emplace_back(pos_ms, width_samples, NAN, NAN, smp, smp, debug_text);
+			debug_AverageFreqInfo.emplace_back(pos_samples, width_samples, NAN, NAN, smp, smp, debug_text);
 #endif
 
 			return smp;
 		}
 
-		int rangeCenter = (pos_ms / 1000.f) * samplerate;
+		int rangeCenter = pos_samples;
 		int rangeMin = rangeCenter - (width_samples / 2);
 		int rangeMax = rangeCenter + (width_samples / 2);
 
@@ -124,19 +140,19 @@ namespace fasstv {
 		avg /= samplesToAverage.size();
 
 #ifdef FASSTV_DEBUG
-		debug_AverageFreqInfo.emplace_back(pos_ms, width_samples, NAN, NAN, avg, avg, debug_text);
+		debug_AverageFreqInfo.emplace_back(pos_samples, width_samples, NAN, NAN, avg, avg, debug_text);
 #endif
 
 		return avg;
 	}
 
-	bool SSTVDecode::AverageFreqAtAreaExpected(float pos_ms, float freq_expected, float freq_margin /*= 50.f*/, int width_samples /*= 10*/, float* freq_back /*= nullptr*/, std::string debug_text /*= ""*/) {
+	bool SSTVDecode::AverageFreqAtAreaExpected(int pos_samples, float freq_expected, float freq_margin /*= 50.f*/, int width_samples /*= 10*/, float* freq_back /*= nullptr*/, std::string debug_text /*= ""*/) {
 		if (freq_expected < 0) {
 			LogError("Looking for a negative frequency...?");
 			return false;
 		}
 
-		float avg = AverageFreqAtArea(pos_ms, width_samples);
+		float avg = AverageFreqAtArea(pos_samples, width_samples);
 
 		if (freq_back)
 			*freq_back = avg;
@@ -145,7 +161,7 @@ namespace fasstv {
 		bool tooSmall = avg < freq_expected - (freq_margin / 2);
 
 #ifdef FASSTV_DEBUG
-		debug_AverageFreqInfo.emplace_back(pos_ms, width_samples, freq_expected, freq_margin, avg, (tooBig || tooSmall) ? 0 : 1, debug_text);
+		debug_AverageFreqInfo.emplace_back(pos_samples, width_samples, freq_expected, freq_margin, avg, (tooBig || tooSmall) ? 0 : 1, debug_text);
 #endif
 
 		if (tooBig || tooSmall)
@@ -331,6 +347,9 @@ namespace fasstv {
 		if (!clamp && (val < 0 || val > samples_freq.size() - 1))
 			return -1;
 
+		if (samples_freq.empty())
+			return -1;
+
 		return std::clamp<int>(val, 0, samples_freq.size() - 1);
 	}
 
@@ -343,6 +362,10 @@ namespace fasstv {
 
 	float SSTVDecode::debug_GetScreenPosAtTime(float time) const {
 		return ((time - debug_graphFreqXPos) * samplerate) / debug_graphFreqXScale;
+	}
+
+	float SSTVDecode::debug_GetScreenPosAtSample(int smp) const {
+		return (smp - (debug_graphFreqXPos * samplerate)) / debug_graphFreqXScale;
 	}
 
 	float SSTVDecode::debug_GetScreenPosAtFreq(float freq) const {
@@ -399,6 +422,9 @@ namespace fasstv {
 
 			SDL_RenderLine(debug_renderer, x, y, x, freqOnScreen);
 		}
+
+		// clamp textY from going off screen
+		textY = std::clamp<float>(textY, 0, debug_windowDimensions[1] - (SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE * 1));
 
 		if(smp != -1)
 			SDL_RenderDebugTextFormat(debug_renderer, textX, textY - (SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE * 2), "%dsmp", smp);
@@ -566,18 +592,22 @@ namespace fasstv {
 		for (int i = 0; i < debug_AverageFreqInfo.size(); i++) {
 		 	auto& info = debug_AverageFreqInfo[i];
 
+			int textWidth = 0;
+			if (debug_drawAverageFreqType >= 4)
+				textWidth = info.debug_text.size() * SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE;
+
 		 	// haven't reached our window yet...
-		 	if ((info.pos_ms / 1000.f) + ((float)(info.width_samples * 4) / samplerate) <= debug_graphFreqXPos + viewingMargin)
+		 	if ((info.pos_samples + (info.width_samples * 1)) / (float)samplerate <= debug_graphFreqXPos + viewingMargin - textWidth)
 		 		continue;
 
 		 	// we've gone too far! stop
-		 	if ((info.pos_ms / 1000.f) - ((float)(info.width_samples * 4) / samplerate) >= debug_graphFreqXPos + debug_GetGraphWidthInSeconds() - viewingMargin)
+		 	if ((info.pos_samples - (info.width_samples * 1)) / (float)samplerate >= debug_graphFreqXPos + debug_GetGraphWidthInSeconds() - viewingMargin + textWidth)
 		 		break;
 
 			if (isnan(info.freq_expected)) {
 				// AverageFreqAtArea
 				if (debug_drawAverageFreqType == 1 || debug_drawAverageFreqType >= 3) {
-					float sampCenter = debug_GetScreenPosAtTime(info.pos_ms / 1000.f);
+					float sampCenter = debug_GetScreenPosAtSample(info.pos_samples);
 					float sampMin = sampCenter - (info.width_samples / debug_graphFreqXScale / 2);
 					float sampMax = sampCenter + (info.width_samples / debug_graphFreqXScale / 2);
 
@@ -601,7 +631,7 @@ namespace fasstv {
 			else {
 				// AverageFreqAtAreaExpected
 				if (debug_drawAverageFreqType >= 2) {
-					float sampCenter = debug_GetScreenPosAtTime(info.pos_ms / 1000.f);
+					float sampCenter = debug_GetScreenPosAtSample(info.pos_samples);
 					float sampMin = sampCenter - (info.width_samples / debug_graphFreqXScale / 2);
 					float sampMax = sampCenter + (info.width_samples / debug_graphFreqXScale / 2);
 
@@ -737,14 +767,14 @@ namespace fasstv {
 	}
 #endif
 
-	void SSTVDecode::DecodeSamples(std::vector<float>& samples, int samplerate, SSTV::Mode* expectedMode /*= nullptr*/, bool expectedFallback /*= false*/) {
+	void SSTVDecode::DecodeAllSamples(std::vector<float>& samples) {
 		this->samples.clear();
 		this->samples_freq.clear();
 		this->samples = samples;
-		this->samplerate = samplerate;
 		this->has_started = false;
 		this->is_done = false;
 		this->decoded_mode = nullptr;
+		this->instructions.clear();
 		this->highest_field_encountered = -1;
 
 		FreeBuffers();
@@ -765,7 +795,6 @@ namespace fasstv {
 			samples_freq[i] = rolling_freq_from_sample(samples[i] * INT16_MAX, samplerate);
 
 		auto sstv = SSTV::The();
-		std::vector<SSTV::Instruction> instructions;
 
 		sstv.CreateVOXHeader(instructions);
 		int instVISStart = instructions.size();
@@ -788,7 +817,7 @@ namespace fasstv {
 			auto& ins = instructions[i];
 
 			int width_samples = (ins.length_ms / 1000.f) * samplerate;
-			float center = (GetTimeAtSample(progress_smp) * 1000.f) + (ins.length_ms / 2.f);
+			float center = progress_smp + (width_samples / 2);
 			float back = 0.f;
 
 			if (i < instVISStart) {
@@ -841,13 +870,13 @@ namespace fasstv {
 
 		if (decoded_mode != nullptr) {
 			LogInfo("Read as VIS code {}, which is mode {}", vis_code, decoded_mode->name);
-			if (expectedMode != nullptr && decoded_mode != expectedMode) {
-				if (expectedFallback) {
-					LogInfo("That wasn't expected, falling back to mode {} and continuing...", vis_code, expectedMode->name);
-					decoded_mode = expectedMode;
+			if (expected_mode != nullptr && decoded_mode != expected_mode) {
+				if (expected_mode_fallback) {
+					LogInfo("That wasn't expected, falling back to mode {} and continuing...", vis_code, expected_mode->name);
+					decoded_mode = expected_mode;
 				}
 				else {
-					LogInfo("Mode {} wasn't our expected mode ({}). Exiting...", decoded_mode->name, expectedMode->name);
+					LogInfo("Mode {} wasn't our expected mode ({}). Exiting...", decoded_mode->name, expected_mode->name);
 					is_done = true;
 					return;
 				}
@@ -889,10 +918,10 @@ namespace fasstv {
 		for (int i = instVISEnd; i < loopEnd; i++) {
 			auto& ins = instructions[i];
 
-			float center = (GetTimeAtSample(progress_smp) * 1000.f) + (ins.length_ms / 2.f);
 			int width_samples = (ins.length_ms / 1000.f) * samplerate;
+			float center = progress_smp + (width_samples / 2.f);
 
-			//LogDebug("Ins {} tracking at {}ms", ins.name, center);
+			// LogDebug("Ins {} tracking at {}ms", ins.name, center);
 
 			float back = 0.f;
 
@@ -920,12 +949,15 @@ namespace fasstv {
 				if (field > highest_field_encountered)
 					highest_field_encountered = field;
 
-				float width_sampleSection = ins.length_ms / decoded_mode->width;
+				int section_width_in_samples = width_samples / decoded_mode->width;
+
+				// not always an integer number of samples, so let's increment by this
+				float section_width_in_ms = ins.length_ms / decoded_mode->width;
 
 				for (int j = 0; j < decoded_mode->width; j++) {
 					float* work_val = &work_buf[((cur_line*decoded_mode->width) + j) * NUM_WORK_BUFFERS];
 
-					float freq = AverageFreqAtArea((GetTimeAtSample(progress_smp) * 1000.f) + (j * width_sampleSection), (width_sampleSection / 1000.f) * samplerate, std::format("F{}_P{}", field, j));
+					float freq = AverageFreqAtArea(progress_smp + (((j * section_width_in_ms) / 1000.f) * (float)samplerate), section_width_in_samples, std::format("F{}_P{}", field, j));
 					// normalize to 0.0-1.0
 					// width of range is 2300-1500 = 800
 					float freqAdj = (freq - 1500.f) / 800.f;
@@ -947,7 +979,7 @@ namespace fasstv {
 				}
 			}
 
-			progress_smp += SecondsToSamples(ins.length_ms / 1000.f);
+			progress_smp += width_samples;
 		}
 
 		LogInfo("Done reading!");

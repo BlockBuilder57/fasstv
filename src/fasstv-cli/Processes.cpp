@@ -50,7 +50,7 @@ namespace fasstv::cli {
 		if (outputPath.empty())
 			return;
 
-		SSTVDecode::The().DecodeSamples(samples, Options::options.encode.samplerate, Options::options.mode, true);
+		SSTVDecode::The().DecodeAllSamples(samples);
 		SSTV::Mode* mode = SSTVDecode::The().GetMode();
 
 		if (mode == nullptr) {
@@ -70,6 +70,21 @@ namespace fasstv::cli {
 			PixelsToQOI(SSTVDecode::The().GetPixels(nullptr), mode->width, mode->lines, file);
 
 		file.close();
+	}
+
+	SSTVEncode& Processes::Encode_Setup() {
+		SSTVEncode& sstvenc = SSTVEncode::The();
+		sstvenc.SetSampleRate(Options::options.encode.samplerate);
+		sstvenc.SetPixelProvider(&GetSampleFromSurface);
+		sstvenc.SetNoiseStrength(Options::options.encode.noise_strength);
+		return sstvenc;
+	}
+
+	SSTVDecode& Processes::Decode_Setup(SSTV::Mode* expectedMode /*= nullptr*/) {
+		SSTVDecode& sstvdec = SSTVDecode::The();
+		sstvdec.SetSampleRate(Options::options.encode.samplerate);
+		sstvdec.SetExpectedMode(expectedMode, true);
+		return sstvdec;
 	}
 
 	int Processes::Audio_Setup() {
@@ -112,7 +127,7 @@ namespace fasstv::cli {
 		}
 	}
 
-	int Processes::Encode_RescaleAndLetterboxImage() {
+	int Processes::Encode_SetModeRescaleAndLetterboxImage() {
 		SSTVEncode& sstvenc = SSTVEncode::The();
 		SSTV::Mode* mode = Options::options.mode;
 
@@ -141,8 +156,7 @@ namespace fasstv::cli {
 
 		SDL_free(surf_orig);
 
-		// set up the encoder
-		sstvenc.SetSampleRate(Options::options.encode.samplerate);
+		// set up letterboxing
 		sstvenc.SetLetterbox(Rect::CreateLetterbox(mode->width, mode->lines, { 0, 0, surf_out->w, surf_out->h }));
 		sstvenc.SetLetterboxLines(false);
 		sstvenc.SetPixelProvider(&GetSampleFromSurface);
@@ -163,11 +177,11 @@ namespace fasstv::cli {
 				return res;
 		}
 
-		int res = Encode_RescaleAndLetterboxImage();
+		int res = Encode_SetModeRescaleAndLetterboxImage();
 		if (res != EXIT_SUCCESS)
 			return res;
 
-		SSTVEncode& sstvenc = SSTVEncode::The();
+		SSTVEncode& sstvenc = Encode_Setup();
 		SSTV::Mode* mode = sstvenc.GetMode();
 
 		if (!Options::options.outputPath.empty()) {
@@ -279,13 +293,14 @@ namespace fasstv::cli {
 				return res;
 		}
 
-		int res = Encode_RescaleAndLetterboxImage();
+		int res = Encode_SetModeRescaleAndLetterboxImage();
 		if (res != EXIT_SUCCESS)
 			return res;
 
-		SSTVEncode& sstvenc = SSTVEncode::The();
-		SSTVDecode& sstvdec = SSTVDecode::The();
+		SSTVEncode& sstvenc = Encode_Setup();
 		SSTV::Mode* mode = sstvenc.GetMode();
+
+		SSTVDecode& sstvdec = Decode_Setup(mode);
 
 		if (Options::options.outputPath.empty()) {
 			// this mode is all about outputting a file... let's make a default
@@ -324,10 +339,10 @@ namespace fasstv::cli {
 					}
 				}
 
-				#ifdef FASSTV_DEBUG
+#ifdef FASSTV_DEBUG
 				if (sstvdec.debug_DebugWindowIsOpen())
 					SSTVDecode::The().debug_DebugWindowPump(&event);
-				#endif
+#endif
 			}
 
 			Audio_PumpOutputStream();
