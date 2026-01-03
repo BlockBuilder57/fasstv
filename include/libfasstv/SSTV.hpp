@@ -26,7 +26,9 @@ namespace fasstv {
 		enum InstructionType : std::uint8_t {
 			InvalidInstructionType,
 			VOX,
+			Leader,
 			VIS,
+			VISBit,
 			Sync,
 			Pulse,
 			Porch,
@@ -372,7 +374,7 @@ namespace fasstv {
 		static Mode* GetMode(const std::string_view& name);
 		static Mode* GetMode(int vis_code);
 
-		static void CreateInstructions(std::vector<Instruction>& instructions, const Mode* mode, bool clear = true);
+		static void CreateInstructions(std::vector<Instruction>& instructions, const Mode* mode, bool clear = true, bool with_headers = true);
 		static void CreateVOXHeader(std::vector<Instruction>& instructions);
 		static void CreateVISHeader(std::vector<Instruction>& instructions, std::uint8_t vis_code);
 		static void CreateFooter(std::vector<Instruction>& instructions);

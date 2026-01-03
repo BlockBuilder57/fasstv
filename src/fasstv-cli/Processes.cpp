@@ -159,8 +159,6 @@ namespace fasstv::cli {
 		// set up letterboxing
 		sstvenc.SetLetterbox(Rect::CreateLetterbox(mode->width, mode->lines, { 0, 0, surf_out->w, surf_out->h }));
 		sstvenc.SetLetterboxLines(false);
-		sstvenc.SetPixelProvider(&GetSampleFromSurface);
-		sstvenc.SetNoiseStrength(Options::options.encode.noise_strength);
 
 		return EXIT_SUCCESS;
 	}
@@ -269,7 +267,84 @@ namespace fasstv::cli {
 	}
 
 	int Processes::ProcessDecode() {
-		LogInfo("Decoding from files not yet implemented");
+		if (!SDL_Init(SDL_INIT_AUDIO)) {
+			LogError("Couldn't initialize SDL: {}", SDL_GetError());
+			return SDL_APP_FAILURE;
+		}
+
+		int res = Audio_Setup();
+		if (res != EXIT_SUCCESS)
+			return res;
+
+		// _for now_ make an image. we'll get microphone input later
+		res = Encode_SetModeRescaleAndLetterboxImage();
+		if (res != EXIT_SUCCESS)
+			return res;
+
+		SSTVEncode& sstvenc = Encode_Setup();
+		SSTV::Mode* mode = sstvenc.GetMode();
+
+		SSTVDecode& sstvdec = Decode_Setup(mode);
+
+		// reset so we can play from the beginning
+		sstvenc.ResetInstructionProcessing();
+		sstvdec.ResetDecoding();
+
+		while (sdl_run) {
+			while (SDL_PollEvent(&event)) {
+				switch (event.type) {
+					case SDL_EVENT_QUIT:
+						sdl_run = false;
+						break;
+					case SDL_EVENT_KEY_DOWN: {
+						if (event.key.scancode == SDL_SCANCODE_P) {
+							if (!sstvenc.IsDone()) {
+								sstvenc.FinishInstructionProcessing();
+							}
+							else {
+								sstvenc.ResetInstructionProcessing();
+								sstvdec.ResetDecoding();
+							}
+						}
+						break;
+					}
+				}
+
+#ifdef FASSTV_DEBUG
+				if (sstvdec.debug_DebugWindowIsOpen())
+					SSTVDecode::The().debug_DebugWindowPump(&event);
+#endif
+			}
+
+			if(audio_stream != nullptr) {
+				const int minimum_audio = Options::options.encode.samplerate;
+				if(SDL_GetAudioStreamAvailable(audio_stream) < minimum_audio) {
+					if(!sstvenc.IsDone() && surf_out != nullptr) {
+						sstvenc.PumpInstructionProcessing(&speaker_buffer[0], buffer_size, { 0, 0, surf_out->w, surf_out->h });
+						for(float& smp : speaker_buffer)
+							smp *= Options::options.volume;
+
+						sstvdec.PumpDecoding(&speaker_buffer[0], buffer_size);
+						SDL_PutAudioStreamData(audio_stream, &speaker_buffer[0], sizeof(speaker_buffer));
+					}
+				}
+			}
+
+			bool considerClosing = (!sstvenc.HasStarted() || sstvenc.IsDone()) && (!sstvdec.HasStarted() || sstvdec.IsDone());
+#ifdef FASSTV_DEBUG
+			considerClosing = considerClosing && !sstvdec.debug_DebugWindowIsOpen();
+#endif
+
+			if (considerClosing)
+				sdl_run = false;
+
+#ifdef FASSTV_DEBUG
+			SSTVDecode::The().debug_DebugWindowRender();
+#endif
+		}
+
+		SDL_free(surf_out);
+		SDL_Quit();
 
 		return EXIT_SUCCESS;
 	}

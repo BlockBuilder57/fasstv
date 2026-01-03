@@ -50,3 +50,4 @@ set_source_files_properties(${PROJECT_BINARY_DIR}/${VERSION_FILENAME} PROPERTIES
 
 add_subdirectory(src/libfasstv)
 add_subdirectory(src/fasstv-cli)
+add_subdirectory(third_party/magic_enum)

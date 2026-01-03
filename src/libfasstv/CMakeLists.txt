@@ -23,4 +23,5 @@ target_include_directories(fasstv PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_link_libraries(fasstv
 		debug SDL3::SDL3
 		debug SDL3_image::SDL3_image
+		magic_enum
 )

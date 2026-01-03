@@ -39,12 +39,14 @@ namespace fasstv {
 		return nullptr;
 	}
 
-	void SSTV::CreateInstructions(std::vector<Instruction>& instructions, const Mode* mode, bool clear /*= true*/) {
+	void SSTV::CreateInstructions(std::vector<Instruction>& instructions, const Mode* mode, bool clear /*= true*/, bool with_headers /*= true*/) {
 		if (clear)
 			instructions.clear();
 
-		CreateVOXHeader(instructions);
-		SSTV::CreateVISHeader(instructions, mode->vis_code);
+		if (with_headers) {
+			CreateVOXHeader(instructions);
+			CreateVISHeader(instructions, mode->vis_code);
+		}
 
 		// some modes (for example, Robot 36) can define multiple lines per instruction set
 		int instruction_divisor = 1;
@@ -101,21 +103,21 @@ namespace fasstv {
 	}
 
 	void SSTV::CreateVISHeader(std::vector<Instruction>& instructions, std::uint8_t vis_code) {
-		instructions.push_back({"Leader 1",   The().VIS_LENGTHS_MS[2], The().VIS_FREQS[1], VIS});
-		instructions.push_back({"break",      The().VIS_LENGTHS_MS[0],  The().VIS_FREQS[0], VIS});
-		instructions.push_back({"Leader 2",   The().VIS_LENGTHS_MS[2], The().VIS_FREQS[1], VIS});
+		instructions.push_back({"Leader 1",   The().VIS_LENGTHS_MS[2], The().VIS_FREQS[1], Leader});
+		instructions.push_back({"break",      The().VIS_LENGTHS_MS[0],  The().VIS_FREQS[0], Sync});
+		instructions.push_back({"Leader 2",   The().VIS_LENGTHS_MS[2], The().VIS_FREQS[1], Leader});
 
 		// VIS
 		instructions.push_back({"VIS start",  The().VIS_LENGTHS_MS[1],  The().VIS_FREQS[0], VIS});
 		bool parity = false;
 		for (int i = 0; i < 7; i++) {
 			bool bit = vis_code & (1 << i);
-			instructions.push_back({"VIS bit " + std::to_string(i), The().VIS_LENGTHS_MS[1], The().VIS_BIT_FREQS[bit], VIS});
+			instructions.push_back({"VIS bit " + std::to_string(i), The().VIS_LENGTHS_MS[1], The().VIS_BIT_FREQS[bit], VISBit});
 
 			if (bit)
 				parity = !parity;
 		}
-		instructions.push_back({"VIS parity", The().VIS_LENGTHS_MS[1], The().VIS_BIT_FREQS[parity], VIS});
+		instructions.push_back({"VIS parity", The().VIS_LENGTHS_MS[1], The().VIS_BIT_FREQS[parity], VISBit});
 		instructions.push_back({"VIS stop",   The().VIS_LENGTHS_MS[1],  The().VIS_FREQS[0], VIS});
 	}
 

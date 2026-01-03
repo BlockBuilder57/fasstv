@@ -6,6 +6,8 @@
 #include <SDL3/SDL.h>
 #endif
 
+#include <magic_enum/magic_enum.hpp>
+
 #include <vector>
 
 #include "SSTVMetadata.hpp"
@@ -40,7 +42,9 @@ namespace fasstv {
 		void SetSampleRate(int samplerate);
 		void SetExpectedMode(SSTV::Mode* expectedMode, bool expectedFallback = false);
 
-		void PumpDecoding(std::vector<float>& samples);
+		void ResetDecoding();
+		void PumpDecoding(float* arr, size_t arr_len);
+		bool GetModeFromDecodedVIS();
 		void DecodeAllSamples(std::vector<float>& samples);
 
 		SSTV::Mode* GetMode() const { return decoded_mode; }
@@ -52,8 +56,8 @@ namespace fasstv {
 	private:
 		void FreeBuffers();
 
-		float AverageFreqAtArea(int pos_samples, int width_samples = 10, std::string debug_text = "");
-		bool AverageFreqAtAreaExpected(int pos_samples, float freq_expected, float freq_margin = 50.f, int width_samples = 10, float* freq_back = nullptr, std::string debug_text = "");
+		float AverageFreqAtArea(int pos_samples, int width_samples = 10, std::string debug_text = "", bool debug_save = true);
+		bool AverageFreqAtAreaExpected(int pos_samples, float freq_expected, float freq_margin = 50.f, float freq_margin_leniency = 1.f, int width_samples = 10, float* freq_back = nullptr, std::string debug_text = "", bool debug_save = true);
 
 		inline float TotalSamplesLengthInSeconds() const { return samples.size() / (float)samplerate; }
 
@@ -64,15 +68,19 @@ namespace fasstv {
 		inline float GetTimeAtSample(const int smp) const { return SamplesToSeconds(smp); }
 		inline int GetSampleAtTime(const float time) const { return SecondsToSamples(time); }
 
+		enum class DecodingState;
+		void Decoding_SwitchState(DecodingState state);
+
 #ifdef FASSTV_DEBUG
-	public:
 		SDL_Renderer* debug_DebugWindowSetup();
 
+	public:
 		void debug_DebugWindowPump(SDL_Event* ev); // return false if done
-		void debug_DebugWindowRender();
+		void debug_DebugWindowRender() const;
 		bool debug_DebugWindowIsOpen() const { return debug_window_open; }
 
 	private:
+
 		float debug_GetTimeAtMouse() const;
 		int debug_GetSampleAtMouse(bool clamp = true) const;
 		float debug_GetFreqAtMouse() const;
@@ -89,6 +97,7 @@ namespace fasstv {
 		void debug_DrawFrequencyGraph() const;
 		void debug_DrawAverageFreqDisplay() const;
 		void debug_DrawBuffersToScreen() const;
+		void debug_DrawDecodingProgress() const;
 
 		inline int debug_GetGraphXPosInSamples() const { return debug_graphFreqXPos * samplerate; }
 		inline int debug_GetGraphWidthInSamples() const { return debug_windowDimensions[0] * debug_graphFreqXScale; }
@@ -104,9 +113,9 @@ namespace fasstv {
 		float debug_graphFreqYPos = 1000.f; // in hertz
 		float debug_graphFreqXPos = 0.f; // in seconds
 
-		bool debug_drawBuffers = true;
 		int debug_drawBuffersType = 0; // 0 - none, 1 - final, 2 - final + rgb, 3 - final + work, 4 - final + rgb + work
-		int debug_drawAverageFreqType = 0; // 0 - none, 1 - avg, 2 - avg expected, 3 - both, 4 - with text
+		int debug_drawAverageFreqType = 4; // 0 - none, 1 - avg, 2 - avg expected, 3 - both, 4 - with text
+		int debug_drawDecodingType = 1; // 0 - none, 1 - yes
 #endif
 
 		float* work_buf = nullptr;
@@ -121,11 +130,40 @@ namespace fasstv {
 		SSTV::Mode* expected_mode = nullptr;
 		bool expected_mode_fallback = false;
 
+		enum class DecodingState {
+			Invalid,
+
+			PreStart,
+			StartBuildInstructions,
+			StartTryAcquire,
+			StartTryAcquireByHeader,
+			StartTryReadVIS,
+			StartTryAcquireBySync,
+
+			ScanSetup,
+			ScanAwaitSync,
+			ScanProcessLoop,
+
+			FailureRecoverable,
+			FailureCritical,
+
+			Finish,
+
+			DecodingStateFirst = PreStart,
+			DecodingStateLast = Finish
+		};
+
+		int decoding_cur_sample = -1;
+		DecodingState decoding_state {};
+		int decoding_state_storage[4] {};
+		std::vector<SSTV::Instruction> decoding_instructions {};
+		int decoding_instruction_idx = -1;
+		int decoding_highest_field_encountered = -1;
+
 		SSTV::Mode* decoded_mode = nullptr;
 		SSTVMetadata::PerModeMetadata* decoded_mode_meta = nullptr;
-		std::vector<SSTV::Instruction> instructions;
-
-		int highest_field_encountered = -1;
+		std::uint8_t decoded_vis_code = 0;
+		bool decoded_vis_parity = false;
 
 		bool has_started = false;
 		bool is_done = false;
