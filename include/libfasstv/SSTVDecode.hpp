@@ -42,9 +42,12 @@ namespace fasstv {
 		void SetSampleRate(int samplerate);
 		void SetExpectedMode(SSTV::Mode* expectedMode, bool expectedFallback = false);
 
+		bool GetModeFromDecodedVIS();
+		void BuildInstructionsAndBuffers();
+		void MakeImageFromWorkBuffer(int startX = 0, int startY = 0);
+
 		void ResetDecoding();
 		void PumpDecoding(float* arr, size_t arr_len);
-		bool GetModeFromDecodedVIS();
 		void DecodeAllSamples(std::vector<float>& samples);
 
 		SSTV::Mode* GetMode() const { return decoded_mode; }
@@ -114,8 +117,8 @@ namespace fasstv {
 		float debug_graphFreqXPos = 0.f; // in seconds
 
 		int debug_drawBuffersType = 0; // 0 - none, 1 - final, 2 - final + rgb, 3 - final + work, 4 - final + rgb + work
-		int debug_drawAverageFreqType = 4; // 0 - none, 1 - avg, 2 - avg expected, 3 - both, 4 - with text
-		int debug_drawDecodingType = 1; // 0 - none, 1 - yes
+		int debug_drawAverageFreqType = 0; // 0 - none, 1 - avg, 2 - avg expected, 3 - both, 4 - with text
+		int debug_drawDecodingType = 0; // 0 - none, 1 - yes
 #endif
 
 		float* work_buf = nullptr;
@@ -141,8 +144,7 @@ namespace fasstv {
 			StartTryAcquireBySync,
 
 			ScanSetup,
-			ScanAwaitSync,
-			ScanProcessLoop,
+			ScanDoLines,
 
 			FailureRecoverable,
 			FailureCritical,
@@ -158,6 +160,7 @@ namespace fasstv {
 		int decoding_state_storage[4] {};
 		std::vector<SSTV::Instruction> decoding_instructions {};
 		int decoding_instruction_idx = -1;
+		int decoding_pos[2] {};
 		int decoding_highest_field_encountered = -1;
 
 		SSTV::Mode* decoded_mode = nullptr;

@@ -79,13 +79,13 @@ namespace fasstv {
 
 		std::vector<Instruction> ROBOT_4_2_0_INSTRUCTIONS = {
 			{ "(1) Sync pulse",               0, 0, Sync,  (InstructionFlags)(NewLine | LengthUsesIndex | PitchUsesIndex) },
-			{ "(2) Sync porch",               1, 1, Sync,  (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
+			{ "(2) Sync porch",               1, 1, Porch,  (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
 			{ "(3) Y scan",                   2, 0, Scan,  (InstructionFlags)(LengthUsesIndex | PitchIsDelegated) },
 			{ "(4) \"Even\" separator pulse", 3, 1, Pulse, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
 			{ "(5) Porch",                    4, 2, Porch, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
 			{ "(6) R-Y scan",                 5, 1, Scan,  (InstructionFlags)(LengthUsesIndex | PitchIsDelegated | ScanIsDoubled) },
 			{ "(7) Sync pulse",               0, 0, Sync,  (InstructionFlags)(ExtraLine | NewLine | LengthUsesIndex | PitchUsesIndex) },
-			{ "(8) Sync porch",               1, 1, Sync,  (InstructionFlags)(ExtraLine | LengthUsesIndex | PitchUsesIndex) },
+			{ "(8) Sync porch",               1, 1, Porch,  (InstructionFlags)(ExtraLine | LengthUsesIndex | PitchUsesIndex) },
 			{ "(9) Y scan",                   2, 0, Scan,  (InstructionFlags)(ExtraLine | LengthUsesIndex | PitchIsDelegated) },
 			{ "(10) \"Odd\" separator pulse", 3, 3, Pulse, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
 			{ "(11) Porch",                   4, 2, Porch, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
@@ -94,7 +94,7 @@ namespace fasstv {
 
 		std::vector<Instruction> ROBOT_4_2_2_INSTRUCTIONS = {
 			{ "(1) Sync pulse",      0, 0, Sync,  (InstructionFlags)(NewLine | LengthUsesIndex | PitchUsesIndex) },
-			{ "(2) Sync porch",      1, 1, Sync,  (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
+			{ "(2) Sync porch",      1, 1, Porch,  (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
 			{ "(3) Y scan",          2, 0, Scan,  (InstructionFlags)(LengthUsesIndex | PitchIsDelegated) },
 			{ "(4) Separator pulse", 3, 1, Pulse, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
 			{ "(5) Porch",           4, 2, Porch, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
@@ -111,7 +111,7 @@ namespace fasstv {
 
 		std::vector<Instruction> MARTIN_INSTRUCTIONS = {
 			{ "(1) Sync pulse",      0, 0, Sync,  (InstructionFlags)(NewLine | LengthUsesIndex | PitchUsesIndex) },
-			{ "(2) Sync porch",      1, 1, Sync,  (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
+			{ "(2) Sync porch",      1, 1, Porch,  (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
 			{ "(3) Green scan",      2, 1, Scan,  (InstructionFlags)(LengthUsesIndex | PitchIsDelegated) },
 			{ "(4) Separator pulse", 1, 1, Pulse, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
 			{ "(5) Blue scan",       2, 2, Scan,  (InstructionFlags)(LengthUsesIndex | PitchIsDelegated) },
@@ -137,7 +137,7 @@ namespace fasstv {
 			{ "(4) Separator pulse",          1, 1, Pulse, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
 			{ "(5) Blue scan",                2, 2, Scan,  (InstructionFlags)(LengthUsesIndex | PitchIsDelegated) },
 			{ "(6) Sync pulse",               0, 0, Sync,  (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
-			{ "(6) Sync porch",               1, 1, Sync,  (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
+			{ "(6) Sync porch",               1, 1, Porch,  (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
 			{ "(7) Red scan",                 2, 0, Scan,  (InstructionFlags)(LengthUsesIndex | PitchIsDelegated) },
 		};
 
@@ -171,7 +171,7 @@ namespace fasstv {
 
 		std::vector<Instruction> BLOCK_ROBOT_INSTRUCTIONS = {
 			{ "(1) Sync pulse",       0, 0, Sync,  (InstructionFlags)(NewLine | LengthUsesIndex | PitchUsesIndex) },
-			{ "(2) Sync porch",       1, 1, Sync,  (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
+			{ "(2) Sync porch",       1, 1, Porch,  (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
 			{ "(3) Y scan",           2, 0, Scan,  (InstructionFlags)(LengthUsesIndex | PitchIsDelegated) },
 			{ "(4) Separator pulse",  3, 1, Pulse, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
 			{ "(5) Porch",            4, 2, Porch, (InstructionFlags)(LengthUsesIndex | PitchUsesIndex) },
@@ -374,7 +374,7 @@ namespace fasstv {
 		static Mode* GetMode(const std::string_view& name);
 		static Mode* GetMode(int vis_code);
 
-		static void CreateInstructions(std::vector<Instruction>& instructions, const Mode* mode, bool clear = true, bool with_headers = true);
+		static void CreateInstructions(std::vector<Instruction>& instructions, const Mode* mode, bool clear = true, bool with_extras = true);
 		static void CreateVOXHeader(std::vector<Instruction>& instructions);
 		static void CreateVISHeader(std::vector<Instruction>& instructions, std::uint8_t vis_code);
 		static void CreateFooter(std::vector<Instruction>& instructions);

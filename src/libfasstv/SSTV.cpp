@@ -39,11 +39,11 @@ namespace fasstv {
 		return nullptr;
 	}
 
-	void SSTV::CreateInstructions(std::vector<Instruction>& instructions, const Mode* mode, bool clear /*= true*/, bool with_headers /*= true*/) {
+	void SSTV::CreateInstructions(std::vector<Instruction>& instructions, const Mode* mode, bool clear /*= true*/, bool with_extras /*= true*/) {
 		if (clear)
 			instructions.clear();
 
-		if (with_headers) {
+		if (with_extras) {
 			CreateVOXHeader(instructions);
 			CreateVISHeader(instructions, mode->vis_code);
 		}
@@ -78,7 +78,8 @@ namespace fasstv {
 			}
 		}
 
-		CreateFooter(instructions);
+		if (with_extras)
+			CreateFooter(instructions);
 
 		// Set instruction length ahead of time
 		for (auto& ins : instructions) {

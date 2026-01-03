@@ -290,6 +290,9 @@ namespace fasstv::cli {
 		sstvenc.ResetInstructionProcessing();
 		sstvdec.ResetDecoding();
 
+		bool doTick = false;
+		bool latchDoTick = true;
+
 		while (sdl_run) {
 			while (SDL_PollEvent(&event)) {
 				switch (event.type) {
@@ -306,6 +309,11 @@ namespace fasstv::cli {
 								sstvdec.ResetDecoding();
 							}
 						}
+						if (event.key.scancode == SDL_SCANCODE_N) {
+							doTick = true;
+							if (event.key.mod & SDL_KMOD_SHIFT)
+								latchDoTick = !latchDoTick;
+						}
 						break;
 					}
 				}
@@ -319,13 +327,15 @@ namespace fasstv::cli {
 			if(audio_stream != nullptr) {
 				const int minimum_audio = Options::options.encode.samplerate;
 				if(SDL_GetAudioStreamAvailable(audio_stream) < minimum_audio) {
-					if(!sstvenc.IsDone() && surf_out != nullptr) {
+					if(!sstvenc.IsDone() && surf_out != nullptr && doTick) {
 						sstvenc.PumpInstructionProcessing(&speaker_buffer[0], buffer_size, { 0, 0, surf_out->w, surf_out->h });
 						for(float& smp : speaker_buffer)
 							smp *= Options::options.volume;
 
 						sstvdec.PumpDecoding(&speaker_buffer[0], buffer_size);
 						SDL_PutAudioStreamData(audio_stream, &speaker_buffer[0], sizeof(speaker_buffer));
+						if (!latchDoTick)
+							doTick = false;
 					}
 				}
 			}

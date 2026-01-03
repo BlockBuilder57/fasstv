@@ -124,18 +124,19 @@ namespace fasstv {
 		int rangeMin = rangeCenter - (width_samples / 2);
 		int rangeMax = rangeCenter + (width_samples / 2);
 
-		rangeMin = std::clamp(rangeMin, 0, (int)samples_freq.size() - 1);
-		rangeMax = std::clamp(rangeMax, 0, (int)samples_freq.size() - 1);
-
 		//LogDebug("AverageFreqAtArea checking {}-{}", rangeMin, rangeMax);
 
 		std::vector<float> samplesToAverage;
 		samplesToAverage.resize(rangeMax - rangeMin);
 
-		std::copy(&samples_freq[rangeMin], &samples_freq[rangeMax], samplesToAverage.data());
-
 		float avg = 0;
 		for (int i = 0; i < samplesToAverage.size(); i++) {
+			int smpIdx = rangeMin + i;
+			if (smpIdx >= 0 && smpIdx < samples_freq.size())
+				samplesToAverage[i] = samples_freq[smpIdx];
+			else
+				samplesToAverage[i] = -1;
+
 			avg += samplesToAverage[i];
 		}
 		avg /= samplesToAverage.size();
@@ -431,8 +432,8 @@ namespace fasstv {
 
 		debug_DrawCursorInfo();
 		debug_DrawAverageFreqDisplay();
-		debug_DrawBuffersToScreen();
 		debug_DrawDecodingProgress();
+		debug_DrawBuffersToScreen();
 
 		SDL_RenderPresent(debug_renderer);
 		SDL_SetRenderDrawColor(debug_renderer, 0, 0, 0, 255);
@@ -822,7 +823,8 @@ namespace fasstv {
 				lineWidthMax = decoding_instructions[i].name.length();
 		}
 
-		int indexWidth = log10(decoding_instruction_idx) + 3; // number of chars in "[i] "
+		int indexWidthNum = decoding_instruction_idx > 0 ? log10(decoding_instruction_idx) : 1;
+		int indexWidth = indexWidthNum + 3; // number of chars in "[i] "
 		int timePitchWidth = 4+2 + 3 + 4+2; // number of chars in "XXXXms @ XXXXHz"
 
 		lineWidthMax += indexWidth;
@@ -830,7 +832,7 @@ namespace fasstv {
 			lineWidthMax = timePitchWidth;
 
 		int lineHeight = (SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE * 2) + 2;
-		int lineWidth = SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE * (lineWidthMax + log10(decoding_instruction_idx) + 3);
+		int lineWidth = SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE * (lineWidthMax + indexWidth);
 
 		int textX = debug_windowDimensions[0] - lineWidth;
 		int textY = (debug_windowDimensions[1] / 2) - (lineHeight * arounds);
@@ -857,21 +859,34 @@ namespace fasstv {
 				SDL_RenderRect(debug_renderer, &recty);
 			}
 
-			SDL_RenderDebugTextFormat(debug_renderer, textX, textY + textYOff, "[%d] %s", i, decoding_instructions[i].name.c_str());
+			const SSTV::Instruction* ins = &decoding_instructions[i];
 
-			if (decoding_instructions[i].flags & SSTV::InstructionFlags::PitchIsDelegated)
+			SDL_RenderDebugTextFormat(debug_renderer, textX, textY + textYOff, "[%d] %s", i, ins->name.c_str());
+
+			if (ins->flags & SSTV::InstructionFlags::PitchIsDelegated)
 				SDL_RenderDebugTextFormat(debug_renderer,
-					textX,
+				textX + (SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE * (indexWidth + 1)),
 					textY + textYOff + SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE,
-					"    %.0fms delegated (param %.0f)", decoding_instructions[i].length_ms, decoding_instructions[i].pitch);
+					"%.0fms param %.0f", ins->length_ms, ins->pitch);
 			else
 				SDL_RenderDebugTextFormat(debug_renderer,
 					textX + (SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE * (indexWidth + 1)),
 					textY + textYOff + SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE,
-					"%.0fms @ %.0fHz", decoding_instructions[i].length_ms, decoding_instructions[i].pitch);
+					"%.0fms @ %.0fHz", ins->length_ms, ins->pitch);
 
 			textYOff += lineHeight;
 		}
+
+		const int buffer_size = 320;
+
+		float lineStorage = debug_GetScreenPosAtSample(decoding_state_storage[3]);
+		float lineSampleBlockStart = debug_GetScreenPosAtSample(decoding_cur_sample - buffer_size);
+		SDL_FRect lineSampleBlock { lineSampleBlockStart, 0, buffer_size / debug_graphFreqXScale, debug_windowDimensions[1]};
+
+		SDL_SetRenderDrawColor(debug_renderer, 0, 255, 255, 255);
+		SDL_RenderLine(debug_renderer, lineStorage, 0, lineStorage, debug_windowDimensions[1]);
+		SDL_SetRenderDrawColor(debug_renderer, 0, 255, 0, 63);
+		SDL_RenderFillRect(debug_renderer, &lineSampleBlock);
 	}
 #endif
 
@@ -886,6 +901,7 @@ namespace fasstv {
 		memset(decoding_state_storage, 0, sizeof(decoding_state_storage));
 		decoding_instructions.clear();
 		decoding_instruction_idx = -1;
+		decoding_pos[0] = decoding_pos[1] = -1;
 		decoding_highest_field_encountered = -1;
 
 		decoded_mode = nullptr;
@@ -938,6 +954,74 @@ namespace fasstv {
 		return true;
 	}
 
+	void SSTVDecode::BuildInstructionsAndBuffers() {
+		auto& sstv = SSTV::The();
+
+		// clear the instructions we had, and rebuild for the new mode
+		sstv.CreateInstructions(decoding_instructions, decoded_mode, true, false);
+		decoding_instruction_idx = 0;
+
+		LogInfo("Rebuilt instructions for {}", decoded_mode->name);
+
+		// alloc the working buffer (floats)
+		work_buf_size = decoded_mode->width * decoded_mode->lines * sizeof(float) * NUM_WORK_BUFFERS;
+		work_buf = static_cast<float*>(malloc(work_buf_size));
+		memset(work_buf, 0, work_buf_size);
+
+		// alloc the pixel buffer (RGB888)
+		pixel_buf_size = decoded_mode->width * decoded_mode->lines * sizeof(std::uint8_t) * NUM_CHANNELS;
+		pixel_buf = static_cast<std::uint8_t*>(malloc(pixel_buf_size));
+		memset(pixel_buf, 0, pixel_buf_size);
+	}
+
+	void SSTVDecode::MakeImageFromWorkBuffer(int startX /*= 0*/, int startY /*= 0*/) {
+		// make the working buffer into an image
+
+		int maxX = std::min<int>(decoded_mode->width, decoding_pos[0]);
+		int maxY = std::min<int>(decoded_mode->lines, decoding_pos[1]);
+
+		if (startX < 0)
+			startX = 0;
+		if (startY < 0)
+			startY = 0;
+
+		for(int x = startX; x < maxX; x++) {
+			for(int y = startY; y < maxY; y++) {
+				float* work_val = &work_buf[((y * decoded_mode->width) + x) * NUM_WORK_BUFFERS];
+
+				// if we never encountered an alpha channel, make alpha max
+				if(decoding_highest_field_encountered < 3)
+					work_val[3] = 1.f;
+
+				std::uint8_t* pix = &pixel_buf[((y * decoded_mode->width) + x) * NUM_CHANNELS];
+
+				std::uint8_t work_val_byte = std::clamp<std::uint8_t>(work_val[0] * 255, 0, 255);
+
+				// worrying about checking this each time. slow?
+				// todo: make a handler function for each
+				switch(decoded_mode->scan_type) {
+					case SSTV::ScanType::Monochrome:
+					case SSTV::ScanType::Sweep: pix[0] = pix[1] = pix[2] = work_val_byte; break;
+					case SSTV::ScanType::RGB:
+						for(int i = 0; i < NUM_CHANNELS; i++)
+							pix[i] = std::clamp<std::uint8_t>(work_val[i] * 255, 0, 255);
+						break;
+					case SSTV::ScanType::YRYBY:
+						std::uint8_t YRYBY[NUM_CHANNELS];
+						for(int i = 0; i < NUM_CHANNELS; i++)
+							YRYBY[i] = std::clamp<std::uint8_t>(work_val[i] * 255, 0, 255);
+
+						pix[0] = std::clamp(0.003906 * ((298.082 * (YRYBY[0] - 16.0)) + (408.583 * (YRYBY[1] - 128.0))), 0., 255.);
+						pix[1] = std::clamp(0.003906 * ((298.082 * (YRYBY[0] - 16.0)) + (-100.291 * (YRYBY[2] - 128.0)) + (-208.12 * (YRYBY[1] - 128.0))), 0., 255.);
+						pix[2] = std::clamp(0.003906 * ((298.082 * (YRYBY[0] - 16.0)) + (516.411 * (YRYBY[2] - 128.0))), 0., 255.);
+						pix[3] = YRYBY[3];
+					default:
+						break;
+				}
+			}
+		}
+	}
+
 	void SSTVDecode::Decoding_SwitchState(DecodingState state) {
 		if (decoding_state == state)
 			return;
@@ -964,6 +1048,14 @@ namespace fasstv {
 
 		auto& sstv = SSTV::The();
 
+		// The Big Boy
+		// there's a lot of unfortunately duplicated code in here. but the specific ways each "duplicate" is used makes them unique enough to not want to change
+		// there may be some worth in splitting these out into their own functions, however.
+
+		// general essence of a loop is that <for each sample we just added> we check backwards and see if the instruction we're looking to fit latches in
+		// if it does, great! set storage[3] to the ending sample, increment our instruction index, and move on to the next sample
+		// if it doesn't, just move on to the next sample. this is kind of inefficient, but it makes it easier to handle potential failures due to stutters
+
 		switch (decoding_state) {
 			case DecodingState::PreStart: {
 				Decoding_SwitchState(DecodingState::StartBuildInstructions);
@@ -987,27 +1079,31 @@ namespace fasstv {
 					if (decoding_instruction_idx >= decoding_instructions.size())
 						break;
 
+					SSTV::Instruction* ins = &decoding_instructions[decoding_instruction_idx];
+					int widthSamples = SecondsToSamples(ins->length_ms / 1000.f);
+
 					int cur_sample = decoding_cur_sample + i;
-					if (decoding_cur_sample + i < decoding_state_storage[3])
+					if (cur_sample < decoding_state_storage[3] + widthSamples)
 						continue;
 
-					SSTV::Instruction* ins = &decoding_instructions[decoding_instruction_idx];
+					if (ins->type == SSTV::InstructionType::VIS || ins->type == SSTV::InstructionType::VISBit)
+						break;
+
 					bool isHalved = ins->type != SSTV::InstructionType::Leader;
 
-					int widthSamples = SecondsToSamples(ins->length_ms / 1000.f);
 					int check_freqMargin = ins->type == SSTV::InstructionType::Leader ? 200 : 50;
 					int check_widthSamples = isHalved ? widthSamples / 2 : widthSamples;
+					int check_sample = cur_sample - (check_widthSamples / 2);
 
-					bool hit = AverageFreqAtAreaExpected(cur_sample, ins->pitch, check_freqMargin, 0.01f, check_widthSamples, nullptr, ins->name, false);
+					bool hit = AverageFreqAtAreaExpected(check_sample, ins->pitch, check_freqMargin, 0.01f, check_widthSamples, nullptr, ins->name, false);
 
 					if (hit) {
-						//LogDebug("Leader hit! {}", ins->name);
+						LogDebug("Leader hit! {}", ins->name);
 
 						// redo for logging purpose
-						AverageFreqAtAreaExpected(cur_sample, ins->pitch, check_freqMargin, 0.01f, check_widthSamples, nullptr, ins->name, true);
+						AverageFreqAtAreaExpected(check_sample, ins->pitch, check_freqMargin, 0.01f, check_widthSamples, nullptr, ins->name, true);
 
-						decoding_state_storage[3] = cur_sample + (widthSamples / (isHalved ? 1 : 2));
-
+						decoding_state_storage[3] = cur_sample;
 						decoding_instruction_idx++;
 					}
 				}
@@ -1019,6 +1115,7 @@ namespace fasstv {
 						break;
 
 					Decoding_SwitchState(DecodingState::StartTryReadVIS);
+					decoding_state_storage[3] = decoding_cur_sample;
 				}
 				else {
 					break;
@@ -1026,34 +1123,32 @@ namespace fasstv {
 			}
 			case DecodingState::StartTryReadVIS: {
 				// storage[0]: cur vis bit
-				// storage[3]: delay checking until this sample
+				// storage[3]: delay checking until this sample. passed in
 
 				for (int i = 0; i < arr_len; i++) {
 					if (decoding_instruction_idx >= decoding_instructions.size())
 						break;
 
-					int cur_sample = decoding_cur_sample + i;
-
-					if (decoding_cur_sample + i < decoding_state_storage[3])
-						continue;
-
 					SSTV::Instruction* ins = &decoding_instructions[decoding_instruction_idx];
-					bool isVISBit = ins->type == SSTV::InstructionType::VISBit;
-
 					int widthSamples = SecondsToSamples(ins->length_ms / 1000.f);
 
-					int check_sample = cur_sample;
-					int check_freqMargin = ins->type == SSTV::InstructionType::Leader ? 200 : 50;
-					int check_freqMarginLeniency = 0.01f;
-					int check_widthSamples = widthSamples / 2;
+					int cur_sample = decoding_cur_sample + i;
+					if (cur_sample < decoding_state_storage[3] + widthSamples)
+						continue;
 
-					bool hit = AverageFreqAtAreaExpected(check_sample, ins->pitch, check_freqMargin, check_freqMarginLeniency, check_widthSamples, nullptr, ins->name, false);
+					bool isVISBit = ins->type == SSTV::InstructionType::VISBit;
+
+					int check_widthSamples = widthSamples;
+					int check_sample = cur_sample - (check_widthSamples / 2);
+
+					bool hit = AverageFreqAtAreaExpected(check_sample, ins->pitch, 50, 0.1f, check_widthSamples, nullptr, ins->name, false);
 
 					if (hit || isVISBit) {
-						//LogDebug("VIS hit! {}", ins->name);
+						if (hit)
+							LogDebug("VIS hit! {}", ins->name);
 
 						// redo for logging purpose
-						hit = AverageFreqAtAreaExpected(check_sample, ins->pitch, check_freqMargin, check_freqMarginLeniency, check_widthSamples, nullptr, ins->name, true);
+						hit = AverageFreqAtAreaExpected(check_sample, ins->pitch, 50, 0.1f, check_widthSamples, nullptr, ins->name, true);
 
 						if (isVISBit) {
 							if (decoding_state_storage[0] < 7) {
@@ -1076,34 +1171,155 @@ namespace fasstv {
 									is_done = true;
 									return;
 								}
-								else {
-									Decoding_SwitchState(DecodingState::ScanSetup);
-								}
 							}
 						}
 
-						decoding_state_storage[3] = cur_sample + widthSamples;
-
+						decoding_state_storage[3] = cur_sample;
 						decoding_instruction_idx++;
+
+						if (decoding_instruction_idx >= decoding_instructions.size()) {
+							// we got to the end, break this loop and fall through
+							break;
+						}
 					}
 				}
 
-				break;
+				// fall through if we're out of header stuff
+				if (decoding_instruction_idx >= decoding_instructions.size()) {
+					int temp = decoding_state_storage[3];
+					Decoding_SwitchState(DecodingState::ScanSetup);
+					decoding_state_storage[3] = temp;
+					// fall through
+				}
+				else {
+					break;
+				}
 			}
 			case DecodingState::ScanSetup: {
 				if(!GetModeFromDecodedVIS())
 					return;
 
-				// clear the instructions we had, and rebuild for the new mode
-				sstv.CreateInstructions(decoding_instructions, decoded_mode, true, false);
-				decoding_instruction_idx = 0;
+				BuildInstructionsAndBuffers();
 
-				LogInfo("Rebuilt instructions for {}", decoded_mode->name);
+				int temp = decoding_state_storage[3];
+				Decoding_SwitchState(DecodingState::ScanDoLines);
+				decoding_state_storage[3] = temp;
 
-				Decoding_SwitchState(DecodingState::ScanAwaitSync);
+				// fall through
+			}
+			case DecodingState::ScanDoLines: {
+				// storage[0]: sample of last sync instruction
+				// storage[3]: delay checking until this sample. passed in
+
+				for (int i = 0; i < arr_len; i++) {
+					if (decoding_instruction_idx >= decoding_instructions.size())
+						break;
+
+					SSTV::Instruction* ins = &decoding_instructions[decoding_instruction_idx];
+					int widthSamples = SecondsToSamples(ins->length_ms / 1000.f);
+
+					int cur_sample = decoding_cur_sample + i;
+					if (cur_sample < decoding_state_storage[3] + widthSamples)
+						continue;
+
+					float expectedPitch = ins->pitch;
+					if (ins->flags & SSTV::InstructionFlags::PitchUsesIndex) {
+						expectedPitch = decoded_mode->frequencies[ins->pitch];
+					}
+
+					if (ins->flags & SSTV::InstructionFlags::NewLine)
+						decoding_pos[1]++;
+
+					if (ins->type != SSTV::InstructionType::Sync) {
+						if (ins->type == SSTV::InstructionType::Scan) {
+							// read the whole scanline, I guess?
+							// it would be cool to do this based on the samples we just added instead of waiting for end of line...
+
+							int check_sample = cur_sample - widthSamples;
+
+							int field = std::clamp<int>(ins->pitch, 0, NUM_WORK_BUFFERS);
+							if (field > decoding_highest_field_encountered)
+								decoding_highest_field_encountered = field;
+
+							int section_width_in_samples = widthSamples / decoded_mode->width;
+
+							// not always an integer number of samples, so let's increment by this
+							float section_width_in_ms = ins->length_ms / decoded_mode->width;
+
+							for (int j = 0; j < decoded_mode->width; j++) {
+								decoding_pos[0] = j;
+								float* work_val = &work_buf[((decoding_pos[1]*decoded_mode->width) + j) * NUM_WORK_BUFFERS];
+
+								float freq = AverageFreqAtArea(check_sample + (((j * section_width_in_ms) / 1000.f) * (float)samplerate), section_width_in_samples, std::format("F{}_P{}", field, j));
+								// normalize to 0.0-1.0
+								// width of range is 2300-1500 = 800
+								float freqAdj = (freq - 1500.f) / 800.f;
+
+								// todo: put this behind an option
+								freqAdj = std::clamp<float>(freqAdj, 0.f, 1.f);
+
+								if (freq > 0) {
+									if (ins->pitch != field)
+										LogDebug("Scan field out of bounds for our working buffer");
+
+									work_val[field] = freqAdj;
+
+									if (ins->flags & SSTV::InstructionFlags::ScanIsDoubled && decoding_pos[1] < decoded_mode->lines - 1) {
+										work_val = &work_buf[(((decoding_pos[1]+1)*decoded_mode->width) + j) * NUM_WORK_BUFFERS];
+										work_val[field] = freqAdj;
+									}
+								}
+							}
+
+							MakeImageFromWorkBuffer(0, decoding_pos[1]-1);
+						}
+
+						decoding_state_storage[3] = cur_sample;
+						decoding_instruction_idx++;
+					}
+					else {
+						int check_freqMargin = 100;
+						int check_freqMarginLeniency = 0.5f;
+						int check_widthSamples = widthSamples / 2;
+						int check_sample = cur_sample - (check_widthSamples / 2);
+
+						bool hit = AverageFreqAtAreaExpected(check_sample, expectedPitch, check_freqMargin, check_freqMarginLeniency, check_widthSamples, nullptr, ins->name, false);
+
+						if (hit) {
+							//LogDebug("Sync hit! {}", ins->name);
+
+							// redo for logging purpose
+							AverageFreqAtAreaExpected(check_sample, expectedPitch, check_freqMargin, check_freqMarginLeniency, check_widthSamples, nullptr, ins->name, true);
+
+							if (decoding_state_storage[0] > 0) {
+								int diff = cur_sample - decoding_state_storage[0];
+								float diffSec = (diff / (float)samplerate);
+								float metaSec = (decoded_mode_meta->sync_between_ms / 1000.f);
+
+								//LogDebug("Diff: {}s (vs meta's {}s)", diffSec, metaSec);
+
+								if (fabs(diffSec - metaSec) > metaSec * 0.1f) {
+									LogError("Sync is greater than 10% off, what happened?");
+								}
+							}
+
+							decoding_state_storage[0] = cur_sample;
+
+							decoding_state_storage[3] = cur_sample;
+							decoding_instruction_idx++;
+						}
+					}
+				}
+
+				if (decoding_instruction_idx >= decoding_instructions.size()) {
+					// we're done!
+					Decoding_SwitchState(DecodingState::Finish);
+				}
+
 				break;
 			}
-			case DecodingState::ScanAwaitSync: {
+			case DecodingState::Finish: {
+				MakeImageFromWorkBuffer();
 				break;
 			}
 			default: {
@@ -1205,23 +1421,10 @@ namespace fasstv {
 		if(!GetModeFromDecodedVIS())
 			return;
 
-		// clear the instructions we had, and rebuild for the new mode
-		sstv.CreateInstructions(decoding_instructions, decoded_mode, true, false);
-
-		LogInfo("Rebuilt instructions for {}", decoded_mode->name);
-
-		// alloc the working buffer (floats)
-		work_buf_size = decoded_mode->width * decoded_mode->lines * sizeof(float) * NUM_WORK_BUFFERS;
-		work_buf = static_cast<float*>(malloc(work_buf_size));
-		memset(work_buf, 0, work_buf_size);
-
-		// alloc the pixel buffer (RGB888)
-		pixel_buf_size = decoded_mode->width * decoded_mode->lines * sizeof(std::uint8_t) * NUM_CHANNELS;
-		pixel_buf = static_cast<std::uint8_t*>(malloc(pixel_buf_size));
-		memset(pixel_buf, 0, pixel_buf_size);
+		BuildInstructionsAndBuffers();
 
 		// we have our mode, time for real instructions!
-		Decoding_SwitchState(DecodingState::ScanProcessLoop);
+		Decoding_SwitchState(DecodingState::ScanDoLines);
 		int cur_line = -1;
 
 		int loopEnd = decoding_instructions.size();
@@ -1297,47 +1500,7 @@ namespace fasstv {
 		LogInfo("Done reading!");
 		Decoding_SwitchState(DecodingState::Finish);
 
-		// make the working buffer into an image
-
-		for (int x = 0; x < decoded_mode->width; x++) {
-			for (int y = 0; y < decoded_mode->lines; y++) {
-				float* work_val = &work_buf[((y*decoded_mode->width) + x) * NUM_WORK_BUFFERS];
-
-				// if we never encountered an alpha channel, make alpha max
-				if (decoding_highest_field_encountered < 3)
-					work_val[3] = 1.f;
-
-				std::uint8_t* pix = &pixel_buf[((y*decoded_mode->width) + x) * NUM_CHANNELS];
-
-				std::uint8_t work_val_byte = std::clamp<std::uint8_t>(work_val[0] * 255, 0, 255);
-
-				// worrying about checking this each time. slow?
-				// todo: make a handler function for each
-				switch (decoded_mode->scan_type) {
-					case SSTV::ScanType::Monochrome:
-					case SSTV::ScanType::Sweep:
-						pix[0] = pix[1] = pix[2] = work_val_byte;
-						break;
-					case SSTV::ScanType::RGB:
-						for (int i = 0; i < NUM_CHANNELS; i++)
-							pix[i] = std::clamp<std::uint8_t>(work_val[i] * 255, 0, 255);
-						break;
-					case SSTV::ScanType::YRYBY:
-						std::uint8_t YRYBY[NUM_CHANNELS];
-						for (int i = 0; i < NUM_CHANNELS; i++)
-							YRYBY[i] = std::clamp<std::uint8_t>(work_val[i] * 255, 0, 255);
-
-						pix[0] = std::clamp(0.003906 * ((298.082 * (YRYBY[0] - 16.0)) + (408.583 *  (YRYBY[1] - 128.0))), 0., 255.);
-						pix[1] = std::clamp(0.003906 * ((298.082 * (YRYBY[0] - 16.0)) + (-100.291 * (YRYBY[2] - 128.0)) + (-208.12 * (YRYBY[1] - 128.0))), 0., 255.);
-						pix[2] = std::clamp(0.003906 * ((298.082 * (YRYBY[0] - 16.0)) + (516.411 *  (YRYBY[2] - 128.0))), 0., 255.);
-						pix[3] = YRYBY[3];
-					default:
-						break;
-				}
-			}
-		}
-
-		LogInfo("Assembled image!");
+		MakeImageFromWorkBuffer();
 
 		is_done = true;
 	}
