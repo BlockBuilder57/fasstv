@@ -28,6 +28,8 @@ namespace fasstv::cli {
 			  .help("Specifies a webcam by (partial) device name.");
 			encode_command.add_argument("-o", "--output").store_into(options.outputPath)
 			  .help("Path to the output audio file.");
+			encode_command.add_argument("--timestamp").flag().store_into(options.outputPathTimestamp)
+			  .help("If specified, appends a UTC timestamp onto the end of the output path. Format: YYYY-MM-DD_HH:MM:SS");
 			encode_command.add_argument("-m", "--mode")
 			  .help("Specifies SSTV mode by name or VIS code.");
 			encode_command.add_argument("-r", "--samplerate").store_into(options.encode.samplerate)
@@ -52,6 +54,8 @@ namespace fasstv::cli {
 			  .help("Path to the input audio file.");
 			decode_command.add_argument("-o", "--output").store_into(options.outputPath)
 			  .help("Path to the output audio file.");
+			decode_command.add_argument("--timestamp").flag().store_into(options.outputPathTimestamp)
+			  .help("If specified, appends a UTC timestamp onto the end of the output path. Format: YYYY-MM-DD_HH:MM:SS");
 			decode_command.add_argument("-m", "--mode")
 			  .help("Specifies SSTV mode by name or VIS code.");
 			decode_command.add_argument("-r", "--samplerate").store_into(options.encode.samplerate)
@@ -68,6 +72,8 @@ namespace fasstv::cli {
 			  .help("Path to the input image.");
 			transcode_command.add_argument("-o", "--output").store_into(options.outputPath)
 			  .help("Path to the output image file.");
+			transcode_command.add_argument("--timestamp").flag().store_into(options.outputPathTimestamp)
+			  .help("If specified, appends a UTC timestamp onto the end of the output path. Format: YYYY-MM-DD_HH:MM:SS");
 			transcode_command.add_argument("-m", "--mode")
 			  .help("Specifies SSTV mode by name or VIS code.");
 			transcode_command.add_argument("--resize-mode").flag().store_into(options.transcode.resize_mode_to_image)
@@ -93,6 +99,11 @@ namespace fasstv::cli {
 			std::cerr << err.what() << std::endl;
 			std::cerr << program;
 			std::exit(1);
+		}
+
+		if (options.outputPathTimestamp) {
+			std::string timestamp = std::format("_{0:%F_%H-%M-%S}", std::chrono::time_point_cast<std::chrono::seconds>(std::chrono::system_clock::now()));
+			options.outputPath.replace_filename(options.outputPath.stem().string() + timestamp + options.outputPath.extension().string());
 		}
 
 		if (program.is_subcommand_used(encode_command)) {
@@ -140,6 +151,7 @@ namespace fasstv::cli {
 		LogInfo("Args:\n");
 		LogInfo("Input path: {}", options.inputPath.string());
 		LogInfo("Output path: {}", options.outputPath.string());
+		LogInfo("Append timestamp: {}", options.outputPathTimestamp);
 		LogInfo("Specified/expected mode: {}", options.mode ? options.mode->name : "(null)");
 		LogInfo("Volume: {}", options.volume);
 		LogInfo("Play audio? {}\n", options.play);

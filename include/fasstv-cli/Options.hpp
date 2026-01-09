@@ -44,6 +44,7 @@ namespace fasstv::cli {
 		SSTV::Mode* mode = nullptr;
 		float volume = 0.33f;
 		bool play = false;
+		bool outputPathTimestamp = false;
 
 		FASSTVMode fasstv_mode = FASSTVMode::Invalid;
 

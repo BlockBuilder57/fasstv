@@ -20,6 +20,8 @@
 half_band_filter2 ssb_filter;
 uint8_t ssb_phase = 0;
 int16_t last_phase = 0;
+int16_t* summed_audio_container = nullptr;
+int32_t summed_audio_counter = 0;
 
 int16_t rolling_freq_from_sample(int16_t audio, int samplerate)
 {
@@ -78,11 +80,35 @@ int16_t rolling_freq_from_sample(int16_t audio, int samplerate)
 	static uint32_t smoothed_freq_at_sample = 0;
 	smoothed_freq_at_sample = ((smoothed_freq_at_sample << 3) + freq_at_sample - smoothed_freq_at_sample) >> 3;
 
+	// incredibly lazy gate
+	const int32_t gate_samples = (samplerate * 0.25f);
+
+	if (!summed_audio_container) {
+		auto size = gate_samples * sizeof(int16_t);
+		summed_audio_container = static_cast<int16_t*>(malloc(size));
+		memset(summed_audio_container, 0, size);
+	}
+	else {
+		if (summed_audio_counter >= gate_samples)
+			summed_audio_counter = 0;
+
+		summed_audio_container[summed_audio_counter] = audio;
+
+		int32_t sum = 0;
+		for (int i = 0; i < gate_samples; i++)
+			sum += abs(summed_audio_container[i]);
+
+		summed_audio_counter++;
+
+		if (sum < (INT16_MAX * 0.05f) * gate_samples)
+			return 1000u;
+	}
+
 	// make sensible values for out of bounds
 	if (smoothed_freq_at_sample < 1000u)
-		return 0;
+		return 1000u;
 	else if (smoothed_freq_at_sample > 2400u)
-		return 3500;
+		return 2400u;
 
 	return std::min(std::max(smoothed_freq_at_sample, 1000u), 2400u);
 }
@@ -1147,7 +1173,7 @@ namespace fasstv {
 					bool hit = AverageFreqAtAreaExpected(check_sample, ins->pitch, 50, 0.1f, check_widthSamples, nullptr, ins->name, false);
 
 					if (hit || isVISBit) {
-						if (hit)
+						if (hit && !isVISBit)
 							LogDebug("VIS hit! {}", ins->name);
 
 						// redo for logging purpose
@@ -1157,10 +1183,10 @@ namespace fasstv {
 							if (decoding_state_storage[0] < 7) {
 								// vis bit
 
-								if (hit)
+								if (!hit)
 									decoded_vis_code = decoded_vis_code | static_cast<std::uint8_t>(1 << decoding_state_storage[0]);
 
-								LogDebug("VIS bit {}, {}. VIS is now {}", decoding_state_storage[0], hit, decoded_vis_code);
+								LogDebug("VIS bit {}, {}. VIS is now {}", decoding_state_storage[0], !hit, decoded_vis_code);
 
 								decoding_state_storage[0]++;
 							}
@@ -1168,7 +1194,7 @@ namespace fasstv {
 								// parity
 								decoded_vis_parity = __builtin_parity(decoded_vis_code);
 
-								if (decoded_vis_parity != hit) {
+								if (decoded_vis_parity != !hit) {
 									LogError("bit parity was wrong!");
 									Decoding_SwitchState(DecodingState::FailureCritical);
 									is_done = true;
@@ -1238,8 +1264,10 @@ namespace fasstv {
 					}
 
 					// increment if this is the first new line
-					if (ins != decoding_instruction_last && ins->flags & SSTV::InstructionFlags::NewLine)
+					if (ins != decoding_instruction_last && ins->flags & SSTV::InstructionFlags::NewLine) {
+						//decoding_state_storage[1] = decoding_instruction_idx;
 						decoding_pos[1]++;
+					}
 
 					if (ins->type != SSTV::InstructionType::Sync) {
 						if (ins->type == SSTV::InstructionType::Scan) {
@@ -1311,8 +1339,16 @@ namespace fasstv {
 
 								//LogDebug("Diff: {}s (vs meta's {}s)", diffSec, metaSec);
 
-								if (fabs(diffSec - metaSec) > metaSec * 0.1f) {
-									LogError("Sync is greater than 10% off, what happened?");
+								float diffMeta = fabs(diffSec - metaSec);
+								if (diffMeta > metaSec * 0.05f) {
+									LogError("Sync is greater than 5% off! ({:.0f}%)", diffMeta * 100.f);
+									LogDebug("Diff: {}s (vs meta's {}s)", diffSec, metaSec);
+
+									int frac = std::round(diffSec / metaSec);
+									LogInfo("Skipping {} lines", frac);
+
+									decoding_pos[1] = std::clamp<int>(decoding_pos[1] + frac, 0, decoded_mode->lines);
+									decoding_instruction_idx += ((int)decoded_mode->instructions_looping.size() - decoded_mode->instruction_loop_start - 1) * frac;
 								}
 							}
 

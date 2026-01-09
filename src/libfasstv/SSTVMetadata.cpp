@@ -73,12 +73,20 @@ namespace fasstv {
 		float sync_between_ms = 0.0f;
 		float last_sync = 0.0f;
 		float sync_length_ms = 0.0f;
+		int newline_interval = 0;
+		int newline_interval_last = 0;
 
-		for (auto& ins : instructions) {
+		for (int i = 0; i < instructions.size(); i++) {
+			auto& ins = instructions[i];
 			float length_ms = ins.length_ms;
 
 			if (ins.flags & SSTV::InstructionFlags::LengthUsesIndex)
 				length_ms = mode->timings[ins.length_ms];
+
+			if (ins.flags & SSTV::InstructionFlags::NewLine && !(ins.flags & SSTV::InstructionFlags::ExtraLine)) {
+				newline_interval = i - newline_interval_last;
+				newline_interval_last = i;
+			}
 
 			if (ins.type == SSTV::InstructionType::Scan)
 				scan_total_length_ms += length_ms;
@@ -114,8 +122,9 @@ namespace fasstv {
 		//LogDebug("    Scan total length: {}s ({:.2f}%)", scan_total_length_ms / 1000.f, (scan_total_length_ms / total_length_ms) * 100.f);
 		//LogDebug("    Sync between: {}s", sync_between_ms / 1000.f);
 		//LogDebug("    Sync length: {}s", sync_length_ms / 1000.f);
+		//LogDebug("    New line interval: {} instructions", newline_interval);
 
-		per_mode_metadata.emplace_back(mode, total_length_ms, loop_length_ms, scan_total_length_ms, sync_between_ms, sync_length_ms);
+		per_mode_metadata.emplace_back(mode, total_length_ms, loop_length_ms, scan_total_length_ms, sync_between_ms, sync_length_ms, newline_interval);
 	}
 
 	void SSTVMetadata::BuildMetadata() {

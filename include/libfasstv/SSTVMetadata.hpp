@@ -17,6 +17,7 @@ namespace fasstv {
 			float scan_total_length_ms {}; // summed time of all scans
 			float sync_between_ms {}; // time between sync pulses
 			float sync_length_ms {}; // length of sync pulse
+			int newline_interval {};
 		};
 
 		static SSTV::Mode* mode_longest;
