@@ -37,20 +37,25 @@ namespace fasstv::cli {
 		LogInfo("Saving {}...", outputPath.c_str());
 		std::ofstream file(outputPath.string(), std::ios::binary);
 
-		if (outputPath.extension() == ".mp3")
-			SamplesToAVCodec(samples, Options::options.encode.samplerate, file);
-		else
+		//if (outputPath.extension() == ".mp3")
+			//SamplesToAVCodec(samples, Options::options.encode.samplerate, outputPath.c_str(), file);
+		//else
 			SamplesToWAV(samples, Options::options.encode.samplerate, file);
 
 		file.close();
 		samples.clear();
 	}
 
-	void Processes::OutputImage(std::vector<float>& samples, std::filesystem::path& outputPath) {
+	void Processes::OutputImage(std::vector<float>* samples, std::filesystem::path& outputPath) {
 		if (outputPath.empty())
 			return;
 
-		SSTVDecode::The().DecodeAllSamples(samples);
+		if (samples) {
+			SSTVDecode::The().ResetDecoding();
+			SSTVDecode::The().DecodeAllSamples(*samples);
+		}
+		// else, assume the decoding is already done or has errored out
+
 		SSTV::Mode* mode = SSTVDecode::The().GetMode();
 
 		if (mode == nullptr) {
@@ -83,8 +88,23 @@ namespace fasstv::cli {
 	SSTVDecode& Processes::Decode_Setup(SSTV::Mode* expectedMode /*= nullptr*/) {
 		SSTVDecode& sstvdec = SSTVDecode::The();
 		sstvdec.SetSampleRate(Options::options.encode.samplerate);
-		sstvdec.SetExpectedMode(expectedMode, true);
+		//sstvdec.SetExpectedMode(expectedMode, true);
 		return sstvdec;
+	}
+
+	bool PrintSDLAudioDevices(SDL_AudioDeviceID* list, int count) {
+		if (!list || count < 1) {
+			LogError("Couldn't list devices, none returned!");
+			return false;
+		}
+
+		LogInfo("Available microphones: ");
+		for (int i = 0; i < count; i++) {
+			SDL_AudioDeviceID id = list[i];
+			LogInfo("  [{}] {}", i+1, SDL_GetAudioDeviceName(id));
+		}
+
+		return true;
 	}
 
 	int Processes::Audio_Setup() {
@@ -94,18 +114,50 @@ namespace fasstv::cli {
 			.freq = Options::options.encode.samplerate
 		};
 
-		audio_stream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, nullptr, nullptr);
-		if (!audio_stream) {
-			LogError("Couldn't create audio stream: {}", SDL_GetError());
-			return SDL_APP_FAILURE;
+		if (Options::options.play) {
+			audio_stream_out = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, nullptr, nullptr);
+			if (!audio_stream_out) {
+				LogError("Couldn't create speaker audio stream: {}", SDL_GetError());
+				return SDL_APP_FAILURE;
+			}
+
+			LogInfo("Trying to play through {}...", SDL_GetAudioDeviceName(SDL_GetAudioStreamDevice(audio_stream_out)));
+
+			bool resume = SDL_ResumeAudioStreamDevice(audio_stream_out);
+			if (!resume) {
+				LogError("Couldn't resume speaker audio stream: {}", SDL_GetError());
+				return SDL_APP_FAILURE;
+			}
 		}
 
-		LogInfo("Trying to play through {}...", SDL_GetAudioDeviceName(SDL_GetAudioStreamDevice(audio_stream)));
+		int microphone_idx = Options::options.decode.microphone_idx;
+		// we intentionally add 1 to this so that 0 can be the default
 
-		bool resume = SDL_ResumeAudioStreamDevice(audio_stream);
-		if (!resume) {
-			LogError("Couldn't resume audio stream: {}", SDL_GetError());
-			return SDL_APP_FAILURE;
+		SDL_AudioDeviceID deviceID = SDL_AUDIO_DEVICE_DEFAULT_RECORDING;
+		int deviceCount = 0;
+		SDL_AudioDeviceID* devices = SDL_GetAudioRecordingDevices(&deviceCount);
+
+		if (microphone_idx < 0)
+			PrintSDLAudioDevices(devices, deviceCount);
+		else if (microphone_idx > 0 && microphone_idx <= deviceCount)
+			deviceID = devices[microphone_idx-1];
+
+		SDL_free(devices);
+
+		if (microphone_idx >= 0) {
+			audio_stream_in = SDL_OpenAudioDeviceStream(deviceID, &spec, nullptr, nullptr);
+			if (!audio_stream_in) {
+				LogError("Couldn't create microphone audio stream: {}", SDL_GetError());
+				return SDL_APP_FAILURE;
+			}
+
+			LogInfo("Trying to record {}...", SDL_GetAudioDeviceName(SDL_GetAudioStreamDevice(audio_stream_in)));
+
+			bool resume = SDL_ResumeAudioStreamDevice(audio_stream_in);
+			if (!resume) {
+				LogError("Couldn't resume microphone audio stream: {}", SDL_GetError());
+				return SDL_APP_FAILURE;
+			}
 		}
 
 		return 0;
@@ -114,14 +166,14 @@ namespace fasstv::cli {
 	void Processes::Audio_PumpOutputStream() {
 		SSTVEncode& sstvenc = SSTVEncode::The();
 
-		if(audio_stream != nullptr) {
+		if(audio_stream_out != nullptr) {
 			const int minimum_audio = Options::options.encode.samplerate;
-			if(SDL_GetAudioStreamAvailable(audio_stream) < minimum_audio) {
+			if(SDL_GetAudioStreamAvailable(audio_stream_out) < minimum_audio) {
 				if(!sstvenc.IsDone() && surf_out != nullptr) {
 					sstvenc.PumpInstructionProcessing(&speaker_buffer[0], buffer_size, { 0, 0, surf_out->w, surf_out->h });
 					for(float& smp : speaker_buffer)
 						smp *= Options::options.volume;
-					SDL_PutAudioStreamData(audio_stream, &speaker_buffer[0], sizeof(speaker_buffer));
+					SDL_PutAudioStreamData(audio_stream_out, &speaker_buffer[0], sizeof(speaker_buffer));
 				}
 			}
 		}
@@ -276,18 +328,9 @@ namespace fasstv::cli {
 		if (res != EXIT_SUCCESS)
 			return res;
 
-		// _for now_ make an image. we'll get microphone input later
-		res = Encode_SetModeRescaleAndLetterboxImage();
-		if (res != EXIT_SUCCESS)
-			return res;
-
-		SSTVEncode& sstvenc = Encode_Setup();
-		SSTV::Mode* mode = sstvenc.GetMode();
-
-		SSTVDecode& sstvdec = Decode_Setup(mode);
+		SSTVDecode& sstvdec = Decode_Setup(Options::options.mode);
 
 		// reset so we can play from the beginning
-		sstvenc.ResetInstructionProcessing();
 		sstvdec.ResetDecoding();
 
 		bool doTick = false;
@@ -301,13 +344,7 @@ namespace fasstv::cli {
 						break;
 					case SDL_EVENT_KEY_DOWN: {
 						if (event.key.scancode == SDL_SCANCODE_P) {
-							if (!sstvenc.IsDone()) {
-								sstvenc.FinishInstructionProcessing();
-							}
-							else {
-								sstvenc.ResetInstructionProcessing();
-								sstvdec.ResetDecoding();
-							}
+							sstvdec.ResetDecoding();
 						}
 						if (event.key.scancode == SDL_SCANCODE_N) {
 							doTick = true;
@@ -324,25 +361,18 @@ namespace fasstv::cli {
 #endif
 			}
 
-			if(audio_stream != nullptr) {
+			if(audio_stream_in != nullptr) {
 				const int minimum_audio = Options::options.encode.samplerate;
-				if(SDL_GetAudioStreamAvailable(audio_stream) < minimum_audio) {
-					if(!sstvenc.IsDone() && surf_out != nullptr && doTick) {
-						sstvenc.PumpInstructionProcessing(&speaker_buffer[0], buffer_size, { 0, 0, surf_out->w, surf_out->h });
-						for(float& smp : speaker_buffer)
-							smp *= Options::options.volume;
+				while (SDL_GetAudioStreamAvailable(audio_stream_in) >= minimum_audio) {
+					SDL_GetAudioStreamData(audio_stream_in, &mic_buffer[0], sizeof(mic_buffer));
 
-						sstvdec.PumpDecoding(&speaker_buffer[0], buffer_size);
-						SDL_PutAudioStreamData(audio_stream, &speaker_buffer[0], sizeof(speaker_buffer));
-						if (!latchDoTick)
-							doTick = false;
-					}
+					sstvdec.PumpDecoding(&mic_buffer[0], buffer_size);
 				}
 			}
 
-			bool considerClosing = (!sstvenc.HasStarted() || sstvenc.IsDone()) && (!sstvdec.HasStarted() || sstvdec.IsDone());
+			bool considerClosing = sstvdec.IsDone() && sstvdec.HasDecodedImage();
 #ifdef FASSTV_DEBUG
-			considerClosing = considerClosing && !sstvdec.debug_DebugWindowIsOpen();
+			considerClosing = considerClosing && (!sstvdec.debug_DebugWindowIsOpen() || sstvdec.HasDecodedImage());
 #endif
 
 			if (considerClosing)
@@ -352,6 +382,8 @@ namespace fasstv::cli {
 			SSTVDecode::The().debug_DebugWindowRender();
 #endif
 		}
+
+		OutputImage(nullptr, Options::options.outputPath);
 
 		SDL_free(surf_out);
 		SDL_Quit();
@@ -400,7 +432,7 @@ namespace fasstv::cli {
 		for (float& smp : samples)
 			smp *= Options::options.volume;
 
-		OutputImage(samples, Options::options.outputPath);
+		OutputImage(&samples, Options::options.outputPath);
 		//OutputSamples(Options::options.outputPath);
 
 		if (Options::options.play)

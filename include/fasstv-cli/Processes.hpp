@@ -16,7 +16,7 @@ namespace fasstv::cli {
 
 	private:
 		void OutputSamples(std::filesystem::path& outputPath);
-		void OutputImage(std::vector<float>& samples, std::filesystem::path& outputPath);
+		void OutputImage(std::vector<float>* samples, std::filesystem::path& outputPath);
 
 		SSTVEncode& Encode_Setup();
 		SSTVDecode& Decode_Setup(SSTV::Mode* expectedMode = nullptr);
@@ -33,8 +33,10 @@ namespace fasstv::cli {
 		SDL_Surface* surf_orig = nullptr;
 		SDL_Surface* surf_out = nullptr;
 
-		SDL_AudioStream* audio_stream = nullptr;
+		SDL_AudioStream* audio_stream_in = nullptr;
+		SDL_AudioStream* audio_stream_out = nullptr;
 		static constexpr size_t buffer_size = 320;
+		float mic_buffer[buffer_size] {};
 		float speaker_buffer[buffer_size] {};
 	};
 

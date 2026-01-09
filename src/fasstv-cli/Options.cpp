@@ -48,14 +48,16 @@ namespace fasstv::cli {
 		decode_command.add_description("Decode an SSTV signal from a file or microphone.");
 		program.add_subparser(decode_command);
 		{
-			decode_command.add_argument("input").store_into(options.inputPath)
+			decode_command.add_argument("-i", "--input").store_into(options.inputPath)
 			  .help("Path to the input audio file.");
 			decode_command.add_argument("-o", "--output").store_into(options.outputPath)
 			  .help("Path to the output audio file.");
 			decode_command.add_argument("-m", "--mode")
 			  .help("Specifies SSTV mode by name or VIS code.");
-			decode_command.add_argument("--microphone")
-			  .help("Specifies a microphone by (partial) device name.");
+			decode_command.add_argument("-r", "--samplerate").store_into(options.encode.samplerate)
+			  .help("Sampling rate of the signal.");
+			decode_command.add_argument("--mic", "--microphone").store_into(options.decode.microphone_idx)
+			  .help("Specifies a microphone by index. Get the list of devices with a negative number.");
 		}
 
 		argparse::ArgumentParser transcode_command("transcode", "", argparse::default_arguments::help);
@@ -145,14 +147,14 @@ namespace fasstv::cli {
 		LogInfo("Encode options:");
 		LogInfo("    Sample rate: {}", options.encode.samplerate);
 		LogInfo("    Separate scans? {}\n", options.encode.separate_scans);
-		LogInfo("    Camera name: {}", options.encode.camera);
+		LogInfo("    Camera index: {}", options.encode.camera);
 		LogInfo("    Camera mode: {}\n", options.encode.camera_mode);
 		LogInfo("    Stretch image? {}", options.encode.image_stretch);
 		LogInfo("    Resize method: {}\n", options.encode.image_resize_method);
 		LogInfo("    Noise strength: {}\n", options.encode.noise_strength);
 
 		LogInfo("Decode options:");
-		LogInfo("    Camera name: {}\n", options.decode.microphone);
+		LogInfo("    Microphone index: {}\n", options.decode.microphone_idx);
 
 		LogInfo("Transcode options:");
 		LogInfo("    Resize mode to image? {}", options.transcode.resize_mode_to_image);

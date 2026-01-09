@@ -895,13 +895,15 @@ namespace fasstv {
 		samples_freq.clear();
 		has_started = false;
 		is_done = false;
+		has_decoded_image = false;
 
 		decoding_cur_sample = -1;
 		decoding_state = DecodingState::PreStart;
 		memset(decoding_state_storage, 0, sizeof(decoding_state_storage));
 		decoding_instructions.clear();
-		decoding_instruction_idx = -1;
+		decoding_instruction_last = nullptr;
 		decoding_pos[0] = decoding_pos[1] = -1;
+		decoding_instruction_idx = -1;
 		decoding_highest_field_encountered = -1;
 
 		decoded_mode = nullptr;
@@ -1058,12 +1060,13 @@ namespace fasstv {
 
 		switch (decoding_state) {
 			case DecodingState::PreStart: {
+				has_started = true;
 				Decoding_SwitchState(DecodingState::StartBuildInstructions);
 				break;
 			}
 			case DecodingState::StartBuildInstructions: {
 				sstv.CreateVISHeader(decoding_instructions, 0);
-				decoding_instruction_idx = 0;
+				decoding_instruction_idx = 2; // testing skipping the leader
 				Decoding_SwitchState(DecodingState::StartTryAcquire);
 				break;
 			}
@@ -1154,10 +1157,10 @@ namespace fasstv {
 							if (decoding_state_storage[0] < 7) {
 								// vis bit
 
-								if (!hit)
+								if (hit)
 									decoded_vis_code = decoded_vis_code | static_cast<std::uint8_t>(1 << decoding_state_storage[0]);
 
-								//LogDebug("VIS bit {}, {}. VIS is now {}", decoding_state_storage[0], !hit, decoded_vis_code);
+								LogDebug("VIS bit {}, {}. VIS is now {}", decoding_state_storage[0], hit, decoded_vis_code);
 
 								decoding_state_storage[0]++;
 							}
@@ -1165,7 +1168,7 @@ namespace fasstv {
 								// parity
 								decoded_vis_parity = __builtin_parity(decoded_vis_code);
 
-								if (decoded_vis_parity != !hit) {
+								if (decoded_vis_parity != hit) {
 									LogError("bit parity was wrong!");
 									Decoding_SwitchState(DecodingState::FailureCritical);
 									is_done = true;
@@ -1176,10 +1179,11 @@ namespace fasstv {
 
 						decoding_state_storage[3] = cur_sample;
 						decoding_instruction_idx++;
+						decoding_instruction_last = ins;
 
 						if (decoding_instruction_idx >= decoding_instructions.size()) {
 							// we got to the end, break this loop and fall through
-							break;
+							break; // break the loop, not the case
 						}
 					}
 				}
@@ -1200,6 +1204,12 @@ namespace fasstv {
 					return;
 
 				BuildInstructionsAndBuffers();
+
+				#ifdef FASSTV_DEBUG
+				// we have a proper signal, show it on screen when hands are busy
+				if (debug_drawBuffersType == 0)
+					debug_drawBuffersType = 1;
+				#endif
 
 				int temp = decoding_state_storage[3];
 				Decoding_SwitchState(DecodingState::ScanDoLines);
@@ -1227,7 +1237,8 @@ namespace fasstv {
 						expectedPitch = decoded_mode->frequencies[ins->pitch];
 					}
 
-					if (ins->flags & SSTV::InstructionFlags::NewLine)
+					// increment if this is the first new line
+					if (ins != decoding_instruction_last && ins->flags & SSTV::InstructionFlags::NewLine)
 						decoding_pos[1]++;
 
 					if (ins->type != SSTV::InstructionType::Sync) {
@@ -1271,7 +1282,9 @@ namespace fasstv {
 								}
 							}
 
+							#ifdef FASSTV_DEBUG
 							MakeImageFromWorkBuffer(0, decoding_pos[1]-1);
+							#endif
 						}
 
 						decoding_state_storage[3] = cur_sample;
@@ -1309,6 +1322,8 @@ namespace fasstv {
 							decoding_instruction_idx++;
 						}
 					}
+
+					decoding_instruction_last = ins;
 				}
 
 				if (decoding_instruction_idx >= decoding_instructions.size()) {
@@ -1320,6 +1335,8 @@ namespace fasstv {
 			}
 			case DecodingState::Finish: {
 				MakeImageFromWorkBuffer();
+				is_done = true;
+				has_decoded_image = true;
 				break;
 			}
 			default: {
@@ -1501,6 +1518,7 @@ namespace fasstv {
 		Decoding_SwitchState(DecodingState::Finish);
 
 		MakeImageFromWorkBuffer();
+		has_decoded_image = true;
 
 		is_done = true;
 	}

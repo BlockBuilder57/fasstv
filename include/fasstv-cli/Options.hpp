@@ -51,7 +51,7 @@ namespace fasstv::cli {
 			int samplerate = 8000;
 			bool separate_scans = false;
 
-			std::string camera {};
+			int camera = 0;
 			int camera_mode = 0;
 
 			bool image_stretch = false;
@@ -61,7 +61,7 @@ namespace fasstv::cli {
 		} encode;
 
 		struct DecodeOptions {
-			std::string microphone {};
+			int microphone_idx = 0;
 		} decode;
 
 		struct TranscodeOptions {

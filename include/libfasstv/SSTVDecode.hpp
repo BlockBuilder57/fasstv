@@ -55,6 +55,7 @@ namespace fasstv {
 
 		bool HasStarted() const { return has_started; }
 		bool IsDone() const { return is_done; }
+		bool HasDecodedImage() const { return has_decoded_image; }
 
 	private:
 		void FreeBuffers();
@@ -159,8 +160,9 @@ namespace fasstv {
 		DecodingState decoding_state {};
 		int decoding_state_storage[4] {};
 		std::vector<SSTV::Instruction> decoding_instructions {};
-		int decoding_instruction_idx = -1;
+		SSTV::Instruction* decoding_instruction_last = nullptr;
 		int decoding_pos[2] {};
+		int decoding_instruction_idx = -1;
 		int decoding_highest_field_encountered = -1;
 
 		SSTV::Mode* decoded_mode = nullptr;
@@ -170,6 +172,7 @@ namespace fasstv {
 
 		bool has_started = false;
 		bool is_done = false;
+		bool has_decoded_image = false;
 	};
 
 } // namespace fasstv
