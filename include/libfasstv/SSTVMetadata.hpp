@@ -20,22 +20,23 @@ namespace fasstv {
 			int newline_interval {};
 		};
 
+		static float mode_longest_ms;
+		static float mode_shortest_ms;
+		static float mode_shortest_sync_ms;
+		static float mode_shortest_between_sync_ms;
+
 		static SSTV::Mode* mode_longest;
 		static SSTV::Mode* mode_shortest;
-
 		static SSTV::Mode* mode_shortest_sync;
+		static SSTV::Mode* mode_shortest_between_sync;
 
 		static void BuildMetadata();
 		static PerModeMetadata* GetModeMetadata(SSTV::Mode* mode);
 
-	private:
-		static float mode_longest_ms;
-		static float mode_shortest_ms;
-		static float mode_shortest_sync_ms;
-
-		static void ProcessMetadata(SSTV::Mode* mode);
-
 		static std::vector<PerModeMetadata> per_mode_metadata;
+
+	private:
+		static void ProcessMetadata(SSTV::Mode* mode);
 	};
 
 } // namespace fasstv

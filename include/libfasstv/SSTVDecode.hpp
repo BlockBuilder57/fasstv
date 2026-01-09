@@ -42,7 +42,7 @@ namespace fasstv {
 		void SetSampleRate(int samplerate);
 		void SetExpectedMode(SSTV::Mode* expectedMode, bool expectedFallback = false);
 
-		bool GetModeFromDecodedVIS();
+		bool GetModeFromDecoded();
 		void BuildInstructionsAndBuffers();
 		void MakeImageFromWorkBuffer(int startX = 0, int startY = 0);
 
@@ -142,7 +142,6 @@ namespace fasstv {
 			StartTryAcquire,
 			StartTryAcquireByHeader,
 			StartTryReadVIS,
-			StartTryAcquireBySync,
 
 			ScanSetup,
 			ScanDoLines,

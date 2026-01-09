@@ -13,10 +13,12 @@ namespace fasstv {
 	float SSTVMetadata::mode_longest_ms = 0.f;
 	float SSTVMetadata::mode_shortest_ms = MAXFLOAT;
 	float SSTVMetadata::mode_shortest_sync_ms = MAXFLOAT;
+	float SSTVMetadata::mode_shortest_between_sync_ms = MAXFLOAT;
 
 	SSTV::Mode* SSTVMetadata::mode_longest = nullptr;
 	SSTV::Mode* SSTVMetadata::mode_shortest = nullptr;
 	SSTV::Mode* SSTVMetadata::mode_shortest_sync = nullptr;
+	SSTV::Mode* SSTVMetadata::mode_shortest_between_sync = nullptr;
 
 	void SSTVMetadata::ProcessMetadata(SSTV::Mode* mode) {
 		// almost a direct copy from SSTV::CreateInstructions
@@ -114,6 +116,10 @@ namespace fasstv {
 		if (sync_length_ms < mode_shortest_sync_ms) {
 			mode_shortest_sync_ms = sync_length_ms;
 			mode_shortest_sync = mode;
+		}
+		if (sync_between_ms < mode_shortest_between_sync_ms) {
+			mode_shortest_between_sync_ms = sync_between_ms;
+			mode_shortest_between_sync = mode;
 		}
 
 		//LogDebug("Mode {}", mode->name);

@@ -946,29 +946,31 @@ namespace fasstv {
 #endif
 	}
 
-	bool SSTVDecode::GetModeFromDecodedVIS() {
-		// try to get our mode
-		decoded_mode = SSTV::GetMode(decoded_vis_code);
+	bool SSTVDecode::GetModeFromDecoded() {
+		if (!decoded_mode) {
+			// try to get our mode from the VIS code
+			decoded_mode = SSTV::GetMode(decoded_vis_code);
 
-		if(decoded_mode != nullptr) {
-			LogInfo("Read as VIS code {}, which is mode {}", decoded_vis_code, decoded_mode->name);
-			if(expected_mode != nullptr && decoded_mode != expected_mode) {
-				if(expected_mode_fallback) {
-					LogInfo("That wasn't expected, falling back to mode {} and continuing...", decoded_vis_code, expected_mode->name);
-					Decoding_SwitchState(DecodingState::FailureRecoverable);
-					decoded_mode = expected_mode;
-				} else {
-					LogInfo("Mode {} wasn't our expected mode ({}). Exiting...", decoded_mode->name, expected_mode->name);
-					Decoding_SwitchState(DecodingState::FailureCritical);
-					is_done = true;
-					return false;
+			if(decoded_mode != nullptr) {
+				LogInfo("Read as VIS code {}, which is mode {}", decoded_vis_code, decoded_mode->name);
+				if(expected_mode != nullptr && decoded_mode != expected_mode) {
+					if(expected_mode_fallback) {
+						LogInfo("That wasn't expected, falling back to mode {} and continuing...", decoded_vis_code, expected_mode->name);
+						Decoding_SwitchState(DecodingState::FailureRecoverable);
+						decoded_mode = expected_mode;
+					} else {
+						LogInfo("Mode {} wasn't our expected mode ({}). Exiting...", decoded_mode->name, expected_mode->name);
+						Decoding_SwitchState(DecodingState::FailureCritical);
+						is_done = true;
+						return false;
+					}
 				}
+			} else {
+				LogInfo("Read as VIS code {}, which is not something we know. Exiting...", decoded_vis_code);
+				Decoding_SwitchState(DecodingState::FailureCritical);
+				is_done = true;
+				return false;
 			}
-		} else {
-			LogInfo("Read as VIS code {}, which is not something we know. Exiting...", decoded_vis_code);
-			Decoding_SwitchState(DecodingState::FailureCritical);
-			is_done = true;
-			return false;
 		}
 
 		// we're happy enough with this to get meta info
@@ -1088,18 +1090,80 @@ namespace fasstv {
 			case DecodingState::PreStart: {
 				has_started = true;
 				Decoding_SwitchState(DecodingState::StartBuildInstructions);
-				break;
+				// fall through
 			}
 			case DecodingState::StartBuildInstructions: {
 				sstv.CreateVISHeader(decoding_instructions, 0);
 				decoding_instruction_idx = 2; // testing skipping the leader
 				Decoding_SwitchState(DecodingState::StartTryAcquire);
-				break;
+				// fall through
 			}
 			case DecodingState::StartTryAcquire: {
-				// todo: sync
-				Decoding_SwitchState(DecodingState::StartTryAcquireByHeader);
-				break;
+				// storage[0]: time since last sync
+
+				SSTV::Mode* identifiedMode = nullptr;
+				SSTV::Instruction* leader = &decoding_instructions[0];
+
+				DecodingState nextState = DecodingState::Invalid;
+
+				for (int i = 0; i < arr_len; i++) {
+					if (nextState != DecodingState::Invalid)
+						break;
+
+					int widthSamplesLeader = SecondsToSamples(leader->length_ms / 1000.f * 0.75f);
+					int widthSamplesSync = SecondsToSamples(SSTVMetadata::mode_shortest_sync_ms / 1000.f * 0.75f);
+
+					int sampleCur = decoding_cur_sample + i;
+					int sampleCheckLeader = sampleCur - (widthSamplesLeader / 2);
+					int sampleCheckSync = sampleCur - (widthSamplesSync / 2);
+
+					bool leaderHit = AverageFreqAtAreaExpected(sampleCheckLeader, leader->pitch, 100, 0.01f, widthSamplesLeader, nullptr, leader->name, false);
+					bool syncHit = AverageFreqAtAreaExpected(sampleCheckSync, 1200, 100, 0.01f, widthSamplesSync, nullptr, "Sync", false);
+
+					if (leaderHit) {
+						LogDebug("Leader hit! {}", leader->name);
+						nextState = DecodingState::StartTryAcquireByHeader;
+					}
+					if (syncHit && !(sampleCur < decoding_state_storage[3] + widthSamplesSync)) {
+						if (decoding_state_storage[0] > 0) {
+							int diff = sampleCur - decoding_state_storage[0];
+							float diffSec = (diff / (float)samplerate);
+
+							SSTV::Mode* bestMode = nullptr;
+							float bestSoFar = MAXFLOAT;
+
+							for(auto& meta : SSTVMetadata::per_mode_metadata) {
+								float metaSec = meta.sync_between_ms / 1000.f;
+								float subtracted = fabs(metaSec - diffSec); // fabs isn't great, but precision can screw up
+
+								//LogDebug("Checking {} (sync dist of {}s) against diffSec {}s - {}s", meta.mode->name, metaSec, diffSec, subtracted);
+
+								if (subtracted >= 0 && subtracted < bestSoFar) {
+									bestSoFar = subtracted;
+									bestMode = meta.mode;
+								}
+							}
+
+							if (bestMode != nullptr) {
+								LogDebug("Best mode: {} ({}s)", bestMode->name, bestSoFar);
+								decoded_mode = bestMode;
+								nextState = DecodingState::ScanSetup;
+							}
+						}
+
+						decoding_state_storage[0] = sampleCur;
+						decoding_state_storage[3] = sampleCur + (SecondsToSamples(SSTVMetadata::mode_shortest_between_sync_ms / 1000.f) / 2);
+					}
+				}
+
+				// fall through if we are confident
+				if (nextState != DecodingState::Invalid) {
+					Decoding_SwitchState(nextState);
+					// fall through
+				}
+				else {
+					break;
+				}
 			}
 			case DecodingState::StartTryAcquireByHeader: {
 				// storage[3]: delay checking until this sample
@@ -1226,7 +1290,7 @@ namespace fasstv {
 				}
 			}
 			case DecodingState::ScanSetup: {
-				if(!GetModeFromDecodedVIS())
+				if(!GetModeFromDecoded())
 					return;
 
 				BuildInstructionsAndBuffers();
@@ -1321,7 +1385,7 @@ namespace fasstv {
 					else {
 						int check_freqMargin = 100;
 						int check_freqMarginLeniency = 0.5f;
-						int check_widthSamples = widthSamples / 2;
+						int check_widthSamples = widthSamples * 0.75f;
 						int check_sample = cur_sample - (check_widthSamples / 2);
 
 						bool hit = AverageFreqAtAreaExpected(check_sample, expectedPitch, check_freqMargin, check_freqMarginLeniency, check_widthSamples, nullptr, ins->name, false);
@@ -1471,7 +1535,7 @@ namespace fasstv {
 			progress_smp += SecondsToSamples(ins.length_ms / 1000.f);
 		}
 
-		if(!GetModeFromDecodedVIS())
+		if(!GetModeFromDecoded())
 			return;
 
 		BuildInstructionsAndBuffers();
