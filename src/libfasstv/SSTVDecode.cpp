@@ -100,7 +100,7 @@ int16_t rolling_freq_from_sample(int16_t audio, int samplerate)
 
 		summed_audio_counter++;
 
-		if (sum < (INT16_MAX * 0.05f) * gate_samples)
+		if (sum < (INT16_MAX * 0.01f) * gate_samples)
 			return 1000u;
 	}
 
@@ -330,7 +330,7 @@ namespace fasstv {
 					debug_drawBuffersType = debug_drawBuffersType + typeChange > 4 || debug_drawBuffersType + typeChange < 0 ? 0 : debug_drawBuffersType + typeChange;
 					break;
 				case SDL_SCANCODE_2:
-					debug_drawAverageFreqType = debug_drawAverageFreqType + typeChange > 4 || debug_drawAverageFreqType + typeChange < 0 ? 0 : debug_drawAverageFreqType + typeChange;
+					debug_drawAverageFreqType = debug_drawAverageFreqType + typeChange > 5 || debug_drawAverageFreqType + typeChange < 0 ? 0 : debug_drawAverageFreqType + typeChange;
 					break;
 				case SDL_SCANCODE_3:
 					debug_drawDecodingType = debug_drawDecodingType + typeChange > 1 || debug_drawDecodingType + typeChange < 0 ? 0 : debug_drawDecodingType + typeChange;
@@ -652,6 +652,10 @@ namespace fasstv {
 
 		debug_DrawTimeReferenceLines();
 		debug_DrawFrequencyReferenceLines();
+
+		SDL_SetRenderDrawColor(debug_renderer, 127, 127, 127, 255);
+		float curSampleX = debug_GetScreenPosAtSample(decoding_cur_sample);
+		SDL_RenderLine(debug_renderer, curSampleX, 0, curSampleX, debug_windowDimensions[1]);
 	}
 
 	void SSTVDecode::debug_DrawAverageFreqDisplay() const {
@@ -695,7 +699,7 @@ namespace fasstv {
 					SDL_SetRenderDrawColor(debug_renderer, 255, 255, 0, 255);
 					SDL_RenderLine(debug_renderer, sampMax, freqYObserved, sampMax, freqYObserved);
 
-					if (!info.debug_text.empty() && debug_drawAverageFreqType >= 4)
+					if (!info.debug_text.empty() && debug_drawAverageFreqType >= 5)
 						SDL_RenderDebugText(debug_renderer, sampMin, freqYObserved, info.debug_text.c_str());
 				}
 			}
@@ -710,13 +714,6 @@ namespace fasstv {
 					int freqYObserved = debug_GetScreenPosAtFreq(info.freq_back);
 					int freqYMargin = (info.freq_margin / 2)/debug_graphFreqYScale;
 
-					// draw expected line
-					SDL_SetRenderDrawColor(debug_renderer, 255, 0, 255, 255);
-					SDL_RenderLine(debug_renderer, sampMin, freqYExpected, sampMax, freqYExpected);
-					// draw observed line
-					SDL_SetRenderDrawColor(debug_renderer, 0, 0, 255, 255);
-					SDL_RenderLine(debug_renderer, sampMin, freqYObserved, sampMax, freqYObserved);
-
 					// draw rectangle
 					if (info.ret)
 						SDL_SetRenderDrawColor(debug_renderer, 40, 127, 10, 255);
@@ -725,6 +722,18 @@ namespace fasstv {
 
 					SDL_FRect rect {sampMin, freqYExpected - freqYMargin, sampMax - sampMin, freqYMargin * 2};
 					SDL_RenderRect(debug_renderer, &rect);
+
+					// draw expected line
+					SDL_SetRenderDrawColor(debug_renderer, 255, 0, 255, 255);
+					SDL_RenderLine(debug_renderer, sampMin, freqYExpected, sampMax, freqYExpected);
+					// draw observed line
+					SDL_SetRenderDrawColor(debug_renderer, 0, 0, 255, 255);
+					SDL_RenderLine(debug_renderer, sampMin, freqYObserved, sampMax, freqYObserved);
+
+					if (info.ret)
+						SDL_SetRenderDrawColor(debug_renderer, 40, 127, 10, 255);
+					else
+						SDL_SetRenderDrawColor(debug_renderer, 255, 0, 0, 255);
 
 					if (!info.debug_text.empty() && debug_drawAverageFreqType >= 4)
 						SDL_RenderDebugText(debug_renderer, sampMin, freqYExpected + freqYMargin + 1, info.debug_text.c_str());
@@ -1100,8 +1109,8 @@ namespace fasstv {
 			}
 			case DecodingState::StartTryAcquire: {
 				// storage[0]: time since last sync
+				// storage[3]: delay checking until this sample
 
-				SSTV::Mode* identifiedMode = nullptr;
 				SSTV::Instruction* leader = &decoding_instructions[0];
 
 				DecodingState nextState = DecodingState::Invalid;
@@ -1110,21 +1119,25 @@ namespace fasstv {
 					if (nextState != DecodingState::Invalid)
 						break;
 
-					int widthSamplesLeader = SecondsToSamples(leader->length_ms / 1000.f * 0.75f);
+					int widthSamplesLeader = SecondsToSamples(leader->length_ms / 1000.f);
 					int widthSamplesSync = SecondsToSamples(SSTVMetadata::mode_shortest_sync_ms / 1000.f * 0.75f);
 
 					int sampleCur = decoding_cur_sample + i;
 					int sampleCheckLeader = sampleCur - (widthSamplesLeader / 2);
 					int sampleCheckSync = sampleCur - (widthSamplesSync / 2);
 
-					bool leaderHit = AverageFreqAtAreaExpected(sampleCheckLeader, leader->pitch, 100, 0.01f, widthSamplesLeader, nullptr, leader->name, false);
-					bool syncHit = AverageFreqAtAreaExpected(sampleCheckSync, 1200, 100, 0.01f, widthSamplesSync, nullptr, "Sync", false);
+					bool leaderHit = AverageFreqAtAreaExpected(sampleCheckLeader, leader->pitch, 200, 0.01f, widthSamplesLeader, nullptr, leader->name, false);
+					bool syncHit = AverageFreqAtAreaExpected(sampleCheckSync, 1200, 100, 0.1f, widthSamplesSync, nullptr, "Sync", false);
 
 					if (leaderHit) {
 						LogDebug("Leader hit! {}", leader->name);
+						AverageFreqAtAreaExpected(sampleCheckLeader, leader->pitch, 200, 0.1f, widthSamplesLeader, nullptr, leader->name, true);
 						nextState = DecodingState::StartTryAcquireByHeader;
+						decoding_state_storage[3] = sampleCur;
 					}
 					if (syncHit && !(sampleCur < decoding_state_storage[3] + widthSamplesSync)) {
+						AverageFreqAtAreaExpected(sampleCheckSync, 1200, 100, 0.1f, widthSamplesSync, nullptr, "Sync", true);
+
 						if (decoding_state_storage[0] > 0) {
 							int diff = sampleCur - decoding_state_storage[0];
 							float diffSec = (diff / (float)samplerate);
@@ -1158,7 +1171,9 @@ namespace fasstv {
 
 				// fall through if we are confident
 				if (nextState != DecodingState::Invalid) {
+					int waitSample = decoding_state_storage[3];
 					Decoding_SwitchState(nextState);
+					decoding_state_storage[3] = waitSample;
 					// fall through
 				}
 				else {
@@ -1166,7 +1181,8 @@ namespace fasstv {
 				}
 			}
 			case DecodingState::StartTryAcquireByHeader: {
-				// storage[3]: delay checking until this sample
+				// storage[2]: how many samples we've been trying for
+				// storage[3]: delay checking until this sample. passed in
 
 				for (int i = 0; i < arr_len; i++) {
 					if (decoding_instruction_idx >= decoding_instructions.size())
@@ -1188,17 +1204,24 @@ namespace fasstv {
 					int check_widthSamples = isHalved ? widthSamples / 2 : widthSamples;
 					int check_sample = cur_sample - (check_widthSamples / 2);
 
-					bool hit = AverageFreqAtAreaExpected(check_sample, ins->pitch, check_freqMargin, 0.01f, check_widthSamples, nullptr, ins->name, false);
+					bool hit = AverageFreqAtAreaExpected(check_sample, ins->pitch, check_freqMargin, 0.1f, check_widthSamples, nullptr, ins->name, false);
 
 					if (hit) {
 						LogDebug("Leader hit! {}", ins->name);
 
 						// redo for logging purpose
-						AverageFreqAtAreaExpected(check_sample, ins->pitch, check_freqMargin, 0.01f, check_widthSamples, nullptr, ins->name, true);
+						AverageFreqAtAreaExpected(check_sample, ins->pitch, check_freqMargin, 0.1f, check_widthSamples, nullptr, ins->name, true);
 
 						decoding_state_storage[3] = cur_sample;
 						decoding_instruction_idx++;
 					}
+				}
+
+				decoding_state_storage[2] += arr_len;
+				if (SamplesToSeconds(decoding_state_storage[2]) > 1.f) {
+					// we've taken too long, try to read the sync
+					Decoding_SwitchState(DecodingState::StartTryAcquire);
+					break;
 				}
 
 				// fall through if we hit a VIS
@@ -1216,6 +1239,7 @@ namespace fasstv {
 			}
 			case DecodingState::StartTryReadVIS: {
 				// storage[0]: cur vis bit
+				// storage[2]: how many samples we've been trying for
 				// storage[3]: delay checking until this sample. passed in
 
 				for (int i = 0; i < arr_len; i++) {
@@ -1234,14 +1258,14 @@ namespace fasstv {
 					int check_widthSamples = widthSamples;
 					int check_sample = cur_sample - (check_widthSamples / 2);
 
-					bool hit = AverageFreqAtAreaExpected(check_sample, ins->pitch, 50, 0.1f, check_widthSamples, nullptr, ins->name, false);
+					bool hit = AverageFreqAtAreaExpected(check_sample, ins->pitch, 25, 1.f, check_widthSamples, nullptr, ins->name, false);
 
 					if (hit || isVISBit) {
 						if (hit && !isVISBit)
 							LogDebug("VIS hit! {}", ins->name);
 
 						// redo for logging purpose
-						hit = AverageFreqAtAreaExpected(check_sample, ins->pitch, 50, 0.1f, check_widthSamples, nullptr, ins->name, true);
+						hit = AverageFreqAtAreaExpected(check_sample, ins->pitch, 25, 1.f, check_widthSamples, nullptr, ins->name, true);
 
 						if (isVISBit) {
 							if (decoding_state_storage[0] < 7) {
@@ -1278,6 +1302,13 @@ namespace fasstv {
 					}
 				}
 
+				decoding_state_storage[2] += arr_len;
+				if (SamplesToSeconds(decoding_state_storage[2]) > 1.f) {
+					// we've taken too long, try to read the sync
+					Decoding_SwitchState(DecodingState::StartTryAcquire);
+					break;
+				}
+
 				// fall through if we're out of header stuff
 				if (decoding_instruction_idx >= decoding_instructions.size()) {
 					int temp = decoding_state_storage[3];
@@ -1303,13 +1334,16 @@ namespace fasstv {
 
 				int temp = decoding_state_storage[3];
 				Decoding_SwitchState(DecodingState::ScanDoLines);
+				decoding_state_storage[2] = temp;
 				decoding_state_storage[3] = temp;
 
 				// fall through
 			}
 			case DecodingState::ScanDoLines: {
 				// storage[0]: sample of last sync instruction
-				// storage[3]: delay checking until this sample. passed in
+				// storage[1]: sample of first sync this line
+				// storage[2]: delay sync checking until this sample. passed in
+				// storage[3]: delay non-sync checking until this sample. passed in
 
 				for (int i = 0; i < arr_len; i++) {
 					if (decoding_instruction_idx >= decoding_instructions.size())
@@ -1319,8 +1353,15 @@ namespace fasstv {
 					int widthSamples = SecondsToSamples(ins->length_ms / 1000.f);
 
 					int cur_sample = decoding_cur_sample + i;
-					if (cur_sample < decoding_state_storage[3] + widthSamples)
-						continue;
+
+					if (ins->type == SSTV::InstructionType::Sync) {
+						if (cur_sample < decoding_state_storage[2] + widthSamples)
+							continue;
+					}
+					else {
+						if (cur_sample < decoding_state_storage[3] + widthSamples)
+							continue;
+					}
 
 					float expectedPitch = ins->pitch;
 					if (ins->flags & SSTV::InstructionFlags::PitchUsesIndex) {
@@ -1353,7 +1394,7 @@ namespace fasstv {
 								decoding_pos[0] = j;
 								float* work_val = &work_buf[((decoding_pos[1]*decoded_mode->width) + j) * NUM_WORK_BUFFERS];
 
-								float freq = AverageFreqAtArea(check_sample + (((j * section_width_in_ms) / 1000.f) * (float)samplerate), section_width_in_samples, std::format("F{}_P{}", field, j));
+								float freq = AverageFreqAtArea(check_sample + (((j * section_width_in_ms) / 1000.f) * (float)samplerate), section_width_in_samples, std::format("F{}_P{}", field, j), false);
 								// normalize to 0.0-1.0
 								// width of range is 2300-1500 = 800
 								float freqAdj = (freq - 1500.f) / 800.f;
@@ -1379,27 +1420,32 @@ namespace fasstv {
 							#endif
 						}
 
+						decoding_state_storage[1] = 0;
+
 						decoding_state_storage[3] = cur_sample;
 						decoding_instruction_idx++;
 					}
 					else {
 						int check_freqMargin = 100;
-						int check_freqMarginLeniency = 0.5f;
-						int check_widthSamples = widthSamples * 0.75f;
-						int check_sample = cur_sample - (check_widthSamples / 2);
+						int check_freqMarginLeniency = 1.f;
+						int check_widthSamples = widthSamples;
+						int check_sample = cur_sample - (widthSamples / 2);
 
-						bool hit = AverageFreqAtAreaExpected(check_sample, expectedPitch, check_freqMargin, check_freqMarginLeniency, check_widthSamples, nullptr, ins->name, false);
+						float freqBack = 0;
 
-						if (hit) {
+						bool hit = AverageFreqAtAreaExpected(check_sample, expectedPitch, check_freqMargin, check_freqMarginLeniency, check_widthSamples, &freqBack, ins->name, false);
+						bool prettyClose = fabs(freqBack - expectedPitch) < 8;
+
+						if (hit && prettyClose) {
 							//LogDebug("Sync hit! {}", ins->name);
+							float metaSec = (decoded_mode_meta->sync_between_ms / 1000.f);
 
 							// redo for logging purpose
-							AverageFreqAtAreaExpected(check_sample, expectedPitch, check_freqMargin, check_freqMarginLeniency, check_widthSamples, nullptr, ins->name, true);
+							AverageFreqAtAreaExpected(check_sample, expectedPitch, check_freqMargin, check_freqMarginLeniency, check_widthSamples, &freqBack, ins->name, true);
 
 							if (decoding_state_storage[0] > 0) {
 								int diff = cur_sample - decoding_state_storage[0];
 								float diffSec = (diff / (float)samplerate);
-								float metaSec = (decoded_mode_meta->sync_between_ms / 1000.f);
 
 								//LogDebug("Diff: {}s (vs meta's {}s)", diffSec, metaSec);
 
@@ -1417,9 +1463,21 @@ namespace fasstv {
 							}
 
 							decoding_state_storage[0] = cur_sample;
-
-							decoding_state_storage[3] = cur_sample;
 							decoding_instruction_idx++;
+
+							// the difference in samples between this and the first hit this sync
+							// half of this should reasonably center the trace?
+							int sampleFirstSync = 0;
+							if (decoding_state_storage[1] != 0) {
+								sampleFirstSync = cur_sample - decoding_state_storage[1];
+							}
+
+							decoding_state_storage[2] = cur_sample + SecondsToSamples(decoded_mode_meta->sync_between_ms / 1000.f) - widthSamples;
+						}
+						else if (hit) {
+							// if it's just a hit, still mark it
+							if (decoding_state_storage[1] == 0)
+								decoding_state_storage[1] = cur_sample;
 						}
 					}
 
