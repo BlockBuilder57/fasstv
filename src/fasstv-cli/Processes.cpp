@@ -114,6 +114,11 @@ namespace fasstv::cli {
 			.freq = Options::options.encode.samplerate
 		};
 
+		if (!SDL_Init(SDL_INIT_AUDIO)) {
+			LogError("Couldn't initialize SDL: {}", SDL_GetError());
+			return SDL_APP_FAILURE;
+		}
+
 		if (Options::options.play) {
 			audio_stream_out = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, nullptr, nullptr);
 			if (!audio_stream_out) {
@@ -210,24 +215,19 @@ namespace fasstv::cli {
 
 		// set up letterboxing
 		sstvenc.SetLetterbox(Rect::CreateLetterbox(mode->width, mode->lines, { 0, 0, surf_out->w, surf_out->h }));
-		sstvenc.SetLetterboxLines(false);
+		sstvenc.SetLetterboxLines(true);
 
 		return EXIT_SUCCESS;
 	}
 
 	int Processes::ProcessEncode() {
-		if (Options::options.play) {
-			if (!SDL_Init(SDL_INIT_AUDIO)) {
-				LogError("Couldn't initialize SDL: {}", SDL_GetError());
-				return SDL_APP_FAILURE;
-			}
+		int res;
 
-			int res = Audio_Setup();
-			if (res != EXIT_SUCCESS)
-				return res;
-		}
+		res = Audio_Setup();
+		if (res != EXIT_SUCCESS)
+			return res;
 
-		int res = Encode_SetModeRescaleAndLetterboxImage();
+		res = Encode_SetModeRescaleAndLetterboxImage();
 		if (res != EXIT_SUCCESS)
 			return res;
 
@@ -319,17 +319,38 @@ namespace fasstv::cli {
 	}
 
 	int Processes::ProcessDecode() {
-		if (!SDL_Init(SDL_INIT_AUDIO)) {
-			LogError("Couldn't initialize SDL: {}", SDL_GetError());
-			return SDL_APP_FAILURE;
-		}
-
 		int res = Audio_Setup();
+
 		if (res != EXIT_SUCCESS)
 			return res;
 
-		SSTVDecode& sstvdec = Decode_Setup(Options::options.mode);
+		bool runFromMic = true;
 
+		SDL_AudioSpec audioSpec;
+		float* audioBuf = nullptr;
+		uint32_t audioBufLen = 0;
+		uint32_t audioBufProgress = 0;
+		std::vector<float> samples;
+
+		bool loaded = SDL_LoadWAV(Options::options.inputPath.c_str(), &audioSpec, reinterpret_cast<uint8_t**>(&audioBuf), &audioBufLen);
+
+		if (loaded) {
+			runFromMic = false;
+
+			LogInfo("Loaded {}", Options::options.inputPath.filename().string());
+			LogDebug("Samplerate of {}, format {}", audioSpec.freq, SDL_GetAudioFormatName(audioSpec.format));
+
+			// we need to change the global samplerate here
+			Options::options.encode.samplerate = audioSpec.freq;
+
+			audioBufLen = audioBufLen / sizeof(float);
+			samples.assign(&audioBuf[0], &audioBuf[0] + audioBufLen);
+
+			//std::ofstream file(Options::options.outputPath.replace_filename("garbage.wav"), std::ios::binary);
+			//SamplesToWAV(samples, audioSpec.freq, file);
+		}
+
+		SSTVDecode& sstvdec = Decode_Setup(Options::options.mode);
 		// reset so we can play from the beginning
 		sstvdec.ResetDecoding();
 
@@ -345,6 +366,7 @@ namespace fasstv::cli {
 					case SDL_EVENT_KEY_DOWN: {
 						if (event.key.scancode == SDL_SCANCODE_P) {
 							sstvdec.ResetDecoding();
+							audioBufProgress = 0;
 						}
 						if (event.key.scancode == SDL_SCANCODE_N) {
 							doTick = true;
@@ -361,18 +383,30 @@ namespace fasstv::cli {
 #endif
 			}
 
-			if(audio_stream_in != nullptr) {
-				const int minimum_audio = Options::options.encode.samplerate;
-				while (SDL_GetAudioStreamAvailable(audio_stream_in) >= minimum_audio) {
-					SDL_GetAudioStreamData(audio_stream_in, &mic_buffer[0], sizeof(mic_buffer));
+			if (doTick) {
+				if(runFromMic && audio_stream_in != nullptr) {
+					const int minimum_audio = Options::options.encode.samplerate;
+					while (SDL_GetAudioStreamAvailable(audio_stream_in) >= minimum_audio) {
+						SDL_GetAudioStreamData(audio_stream_in, &mic_buffer[0], sizeof(mic_buffer));
 
-					sstvdec.PumpDecoding(&mic_buffer[0], buffer_size);
+						sstvdec.PumpDecoding(&mic_buffer[0], buffer_size);
+					}
 				}
+				else if (!samples.empty()) {
+					const int increment = buffer_size;
+
+					if (audioBufProgress + increment < audioBufLen)
+						sstvdec.PumpDecoding(&audioBuf[audioBufProgress], increment);
+					audioBufProgress += increment;
+				}
+
+				if (latchDoTick)
+					doTick = false;
 			}
 
 			bool considerClosing = sstvdec.IsDone() && sstvdec.HasDecodedImage();
 #ifdef FASSTV_DEBUG
-			considerClosing = considerClosing && (!sstvdec.debug_DebugWindowIsOpen() || sstvdec.HasDecodedImage());
+			considerClosing = considerClosing && !sstvdec.debug_DebugWindowIsOpen();
 #endif
 
 			if (considerClosing)
@@ -383,15 +417,21 @@ namespace fasstv::cli {
 #endif
 		}
 
-		OutputImage(nullptr, Options::options.outputPath);
+		//if (sstvdec.HasDecodedImage())
+			//OutputImage(nullptr, Options::options.outputPath);
 
-		SDL_free(surf_out);
+		if (surf_out)
+			SDL_free(surf_out);
+		if (audioBuf)
+			SDL_free(audioBuf);
 		SDL_Quit();
 
 		return EXIT_SUCCESS;
 	}
 
 	int Processes::ProcessTranscode() {
+		int res;
+
 #ifdef FASSTV_DEBUG
 		if (!SDL_Init(SDL_INIT_VIDEO)) {
 			LogError("Couldn't initialize SDL: {}", SDL_GetError());
@@ -399,18 +439,11 @@ namespace fasstv::cli {
 		}
 #endif
 
-		if (Options::options.play) {
-			if (!SDL_Init(SDL_INIT_AUDIO)) {
-				LogError("Couldn't initialize SDL: {}", SDL_GetError());
-				return SDL_APP_FAILURE;
-			}
+		res = Audio_Setup();
+		if (res != EXIT_SUCCESS)
+			return res;
 
-			int res = Audio_Setup();
-			if (res != EXIT_SUCCESS)
-				return res;
-		}
-
-		int res = Encode_SetModeRescaleAndLetterboxImage();
+		res = Encode_SetModeRescaleAndLetterboxImage();
 		if (res != EXIT_SUCCESS)
 			return res;
 

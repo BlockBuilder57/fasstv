@@ -63,6 +63,9 @@ namespace fasstv {
 		float AverageFreqAtArea(int pos_samples, int width_samples = 10, std::string debug_text = "", bool debug_save = true);
 		bool AverageFreqAtAreaExpected(int pos_samples, float freq_expected, float freq_margin = 50.f, float freq_margin_leniency = 1.f, int width_samples = 10, float* freq_back = nullptr, std::string debug_text = "", bool debug_save = true);
 
+		inline float* GetWorkBufPtr(int x, int y) const;
+		inline std::uint8_t* GetPixelBufPtr(int x, int y) const;
+
 		inline float TotalSamplesLengthInSeconds() const { return samples.size() / (float)samplerate; }
 
 		inline float SamplesToSeconds(const int smp) const { return smp / (float)samplerate; }
@@ -74,6 +77,8 @@ namespace fasstv {
 
 		enum class DecodingState;
 		void Decoding_SwitchState(DecodingState state);
+		void Decoding_NextInstruction();
+		bool Decoding_SearchForBestFit(SSTV::Instruction* ins, int expected_midpoint);
 
 #ifdef FASSTV_DEBUG
 		SDL_Renderer* debug_DebugWindowSetup();
@@ -117,9 +122,9 @@ namespace fasstv {
 		float debug_graphFreqYPos = 1000.f; // in hertz
 		float debug_graphFreqXPos = 0.f; // in seconds
 
-		int debug_drawBuffersType = 0; // 0 - none, 1 - final, 2 - final + rgb, 3 - final + work, 4 - final + rgb + work
-		int debug_drawAverageFreqType = 0; // 0 - none, 1 - avg, 2 - avg expected, 3 - both, 4 - with text
-		int debug_drawDecodingType = 0; // 0 - none, 1 - yes
+		int debug_drawBuffersType = 1; // 0 - none, 1 - final, 2 - final + rgb, 3 - final + work, 4 - final + rgb + work
+		int debug_drawAverageFreqType = 4; // 0 - none, 1 - avg, 2 - avg expected, 3 - both, 4 - avg expected text, 5 - all text
+		int debug_drawDecodingType = 1; // 0 - none, 1 - yes
 #endif
 
 		float* work_buf = nullptr;
