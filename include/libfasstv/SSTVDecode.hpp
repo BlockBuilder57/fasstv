@@ -25,9 +25,16 @@ namespace fasstv {
 		std::string debug_text {};
 	};
 
+	struct MarkerDebugInfo {
+		int pos_samples {};
+		float freq {};
+		std::string debug_text {};
+	};
+
 	// vaguely new (c++17) thing I didn't know about, thanks CLion
 	// inline keyword works around the one definition rule. easier than defining and using an extern!
 	inline std::vector<AverageFreqDebugInfo> debug_AverageFreqInfo{};
+	inline std::vector<MarkerDebugInfo> debug_Markers{};
 	#endif
 
 	class SSTVDecode {
@@ -105,6 +112,7 @@ namespace fasstv {
 		void debug_ResetFrequencyGraphScale(bool fullScreen = false);
 		void debug_DrawFrequencyGraph() const;
 		void debug_DrawAverageFreqDisplay() const;
+		void debug_DrawMarkers() const;
 		void debug_DrawBuffersToScreen() const;
 		void debug_DrawDecodingProgress() const;
 
@@ -124,6 +132,7 @@ namespace fasstv {
 
 		int debug_drawBuffersType = 1; // 0 - none, 1 - final, 2 - final + rgb, 3 - final + work, 4 - final + rgb + work
 		int debug_drawAverageFreqType = 4; // 0 - none, 1 - avg, 2 - avg expected, 3 - both, 4 - avg expected text, 5 - all text
+		int debug_drawMarkerType = 2; // 0 - none, 1 - crosshair, 2 - text
 		int debug_drawDecodingType = 1; // 0 - none, 1 - yes
 #endif
 

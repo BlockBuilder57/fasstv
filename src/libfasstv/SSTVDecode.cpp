@@ -357,6 +357,9 @@ namespace fasstv {
 					debug_drawAverageFreqType = debug_drawAverageFreqType + typeChange > 5 || debug_drawAverageFreqType + typeChange < 0 ? 0 : debug_drawAverageFreqType + typeChange;
 					break;
 				case SDL_SCANCODE_3:
+					debug_drawMarkerType = debug_drawMarkerType + typeChange > 2 || debug_drawMarkerType + typeChange < 0 ? 0 : debug_drawMarkerType + typeChange;
+					break;
+				case SDL_SCANCODE_4:
 					debug_drawDecodingType = debug_drawDecodingType + typeChange > 1 || debug_drawDecodingType + typeChange < 0 ? 0 : debug_drawDecodingType + typeChange;
 					break;
 			}
@@ -483,6 +486,7 @@ namespace fasstv {
 
 		debug_DrawCursorInfo();
 		debug_DrawAverageFreqDisplay();
+		debug_DrawMarkers();
 		debug_DrawDecodingProgress();
 		debug_DrawBuffersToScreen();
 
@@ -711,7 +715,7 @@ namespace fasstv {
 					float sampMin = sampCenter - (info.width_samples / debug_graphFreqXScale / 2);
 					float sampMax = sampCenter + (info.width_samples / debug_graphFreqXScale / 2);
 
-					int freqYObserved = debug_GetScreenPosAtFreq(info.freq_back);
+					float freqYObserved = debug_GetScreenPosAtFreq(info.freq_back);
 
 					// draw width lines
 					const int lineHeight = 5;
@@ -735,9 +739,9 @@ namespace fasstv {
 					float sampMin = sampCenter - (info.width_samples / debug_graphFreqXScale / 2);
 					float sampMax = sampCenter + (info.width_samples / debug_graphFreqXScale / 2);
 
-					int freqYExpected = debug_GetScreenPosAtFreq(info.freq_expected);
-					int freqYObserved = debug_GetScreenPosAtFreq(info.freq_back);
-					int freqYMargin = (info.freq_margin / 2)/debug_graphFreqYScale;
+					float freqYExpected = debug_GetScreenPosAtFreq(info.freq_expected);
+					float freqYObserved = debug_GetScreenPosAtFreq(info.freq_back);
+					float freqYMargin = (info.freq_margin / 2)/debug_graphFreqYScale;
 
 					// draw rectangle
 					if (info.ret)
@@ -764,6 +768,40 @@ namespace fasstv {
 						SDL_RenderDebugText(debug_renderer, sampMin, freqYExpected + freqYMargin + 1, info.debug_text.c_str());
 				}
 			}
+		}
+	}
+
+	void SSTVDecode::debug_DrawMarkers() const {
+		if (!SDL_WasInit(0) || debug_drawMarkerType <= 0)
+			return;
+
+		const float viewingMargin = 0; //debug_GetGraphWidthInSeconds() / 16.f;
+
+		for (int i = 0; i < debug_Markers.size(); i++) {
+		 	auto& info = debug_Markers[i];
+
+			const int CROSSHAIR_SIZE = 10;
+			int extraWidth = CROSSHAIR_SIZE;
+			if (debug_drawMarkerType >= 2)
+				extraWidth = std::max<int>(extraWidth, info.debug_text.size() * SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE);
+
+		 	// haven't reached our window yet...
+		 	if (info.pos_samples / (float)samplerate <= debug_graphFreqXPos + viewingMargin - extraWidth)
+		 		continue;
+
+		 	// we've gone too far! stop
+		 	if (info.pos_samples / (float)samplerate >= debug_graphFreqXPos + debug_GetGraphWidthInSeconds() - viewingMargin + extraWidth)
+		 		break;
+
+			float x = debug_GetScreenPosAtSample(info.pos_samples);
+			float y = debug_GetScreenPosAtFreq(info.freq);
+
+			SDL_SetRenderDrawColor(debug_renderer, 255, 255, 255, 64);
+			SDL_RenderLine(debug_renderer, x - (CROSSHAIR_SIZE / 2), y - (CROSSHAIR_SIZE / 2), x + (CROSSHAIR_SIZE / 2), y + (CROSSHAIR_SIZE / 2));
+			SDL_RenderLine(debug_renderer, x + (CROSSHAIR_SIZE / 2), y - (CROSSHAIR_SIZE / 2), x - (CROSSHAIR_SIZE / 2), y + (CROSSHAIR_SIZE / 2));
+
+			if (debug_drawMarkerType >= 2)
+				SDL_RenderDebugText(debug_renderer, x, y, info.debug_text.c_str());
 		}
 	}
 
@@ -1818,6 +1856,7 @@ namespace fasstv {
 
 #ifdef FASSTV_DEBUG
 		debug_AverageFreqInfo.clear();
+		debug_Markers.clear();
 #endif
 	}
 
