@@ -1017,14 +1017,15 @@ namespace fasstv {
 		is_done = false;
 		has_decoded_image = false;
 
+		decoding_instructions.clear();
+		decoding_instruction_last = nullptr;
 		decoding_cur_sample = -1;
 		decoding_state = DecodingState::PreStart;
 		memset(decoding_state_storage, 0, sizeof(decoding_state_storage));
-		decoding_instructions.clear();
-		decoding_instruction_last = nullptr;
 		decoding_pos[0] = decoding_pos[1] = -1;
 		decoding_instruction_idx = -1;
 		decoding_highest_field_encountered = -1;
+		decoding_sync_misses = 0;
 
 		decoded_mode = nullptr;
 		decoded_mode_meta = nullptr;
@@ -1163,9 +1164,12 @@ namespace fasstv {
 	}
 
 	void SSTVDecode::Decoding_NextInstruction() {
+		assert(decoding_instruction_idx >= -1 && decoding_instruction_idx < static_cast<long>(decoding_instructions.size()));
+
 		if (decoding_instruction_idx >= 0) {
 			SSTV::Instruction* ins_cur = &decoding_instructions[decoding_instruction_idx];
 			decoding_instruction_last = ins_cur;
+			//debug_Markers.emplace_back(decoding_state_storage[3], 2300, std::format("[{}] {}", decoding_instruction_idx, ins_cur->name));
 		}
 		else {
 			decoding_instruction_last = nullptr;
@@ -1185,15 +1189,21 @@ namespace fasstv {
 		}
 	}
 
-	bool SSTVDecode::Decoding_SearchForBestFit(SSTV::Instruction* ins, int expected_midpoint) {
+	// returns -1 on an out-of-bounds
+	// returns 0 if no good best fit was found (sign to try again a bit later)
+	// returns positive integer corresponding to the middle of the best fit
+	int SSTVDecode::Decoding_SearchForBestFit(SSTV::Instruction* ins, int expected_midpoint) {
+		if (!ins || expected_midpoint <= 0)
+			return -1;
+
 		int widthSamples = SecondsToSamples(ins->length_ms / 1000.f);
 		int widthSamplesHalf = widthSamples / 2;
 
 		// we can't do anything reliably if we're not past the end point yet
 		if (samples_freq.size() < expected_midpoint + widthSamples)
-			return false;
+			return -1;
 
-		LogDebug("Searching for {} around {} +- {}", ins->name, expected_midpoint, widthSamples);
+		//LogDebug("Searching for {} around {} +- {}", ins->name, expected_midpoint, widthSamples);
 
 		// scan two widths for the best fit
 		float freqBack;
@@ -1262,16 +1272,55 @@ namespace fasstv {
 
 			decoding_state_storage[3] = sampleBestFit + widthSamplesHalf;
 
-			//LogDebug("Instruction #{} found a best fit, moving to next", decoding_instruction_idx);
-			Decoding_NextInstruction();
-
-			return true;
+			return sampleBestFit;
 		}
 		else {
 			// we didn't find anything there... make sure we don't retread our work
 			decoding_state_storage[3] = expected_midpoint + widthSamplesHalf;
 
-			return false;
+			return 0;
+		}
+	}
+
+	int SSTVDecode::Decoding_GetMissingSyncs(int last_good_sync, int this_sync) {
+		if (!decoded_mode_meta || last_good_sync <= 0)
+			return 0;
+
+		const float SYNC_DIFF_THRESHOLD = 0.05f;
+
+		int missingSyncs = 0;
+
+		// remember, this_sync could be a hit or a miss
+
+		int diff = this_sync - last_good_sync;
+		float diffSec = (diff / (float)samplerate);
+		float metaSec = (decoded_mode_meta->sync_between_ms / 1000.f);
+
+		//LogDebug("Diff: {}s (vs meta's {}s)", diffSec, metaSec);
+
+		float diffMeta = fabs(diffSec - metaSec);
+		if (diffMeta > metaSec * SYNC_DIFF_THRESHOLD) {
+			//LogError("Sync is greater than {:.0f}% off! ({:.0f}%)", SYNC_DIFF_THRESHOLD * 100.f, (metaSec / diffMeta) * 100.f);
+			//LogDebug("Diff: {}s (vs meta's {}s)", diffSec, metaSec);
+
+			missingSyncs = std::round(diffSec / metaSec);
+			missingSyncs /= decoded_mode->instruction_loop_num_lines;
+		}
+
+		return missingSyncs;
+	}
+
+	void SSTVDecode::Decoding_SkipLines(int lines) {
+		LogInfo("Skipping {} lines", lines);
+
+		int instructionsToSkip = ((int)decoded_mode->instructions_looping.size() - decoded_mode->instruction_loop_start - 1) * lines;
+		while (lines > 0 && decoding_instruction_idx < decoding_instructions.size()) {
+			SSTV::Instruction* ins_cur = &decoding_instructions[decoding_instruction_idx];
+			if (ins_cur->flags & SSTV::InstructionFlags::NewLine)
+				lines--;
+
+			if (lines > 0)
+				Decoding_NextInstruction();
 		}
 	}
 
@@ -1541,7 +1590,7 @@ namespace fasstv {
 				Decoding_SwitchState(DecodingState::ScanDoLines);
 				decoding_state_storage[3] = temp;
 
-				LogDebug("Scan setup ended at {}smp", temp);
+				//LogDebug("Scan setup ended at {}smp", temp);
 
 				// fall through
 			}
@@ -1562,8 +1611,13 @@ namespace fasstv {
 						continue;
 
 					if (ins->type == SSTV::InstructionType::Sync) {
-						//int lastSync = decoding_state_storage[0];
-						bool hit = Decoding_SearchForBestFit(ins, decoding_state_storage[3] + (widthSamples / 2));
+						int lastSync = decoding_state_storage[0];
+						int midpoint = decoding_state_storage[3] + (widthSamples / 2);
+						int hit = Decoding_SearchForBestFit(ins, midpoint);
+
+						// if -1, we don't do anything
+						if (hit == -1)
+							continue;
 
 						// if hit, record in storage[0]
 						//     compare to last one (if present) and make sure we're not straying too far from expected
@@ -1573,13 +1627,41 @@ namespace fasstv {
 						//         take the time between. diff = decoding_state_storage[3] - decoding_state_storage[0]
 						//         see how many decoded_mode_meta->sync_between_ms fit into that to see how many lines to skip
 
-						if (hit) {
-							decoding_state_storage[0] = decoding_state_storage[3];
-							continue;
+						//LogDebug("Sync {} was a {}", decoding_instruction_idx, hit);
+
+						if (hit > 0) {
+							decoding_state_storage[0] = hit;
+
+							int missingSyncs = Decoding_GetMissingSyncs(lastSync, decoding_state_storage[0]);
+
+							if (missingSyncs > 0)
+								LogDebug("hit, {} syncs late", missingSyncs);
+
+							decoding_sync_misses--;
+							if (decoding_sync_misses < 0)
+								decoding_sync_misses = 0;
+
+							Decoding_NextInstruction();
+						}
+						else {
+							const auto THRESHOLD = 10;
+							decoding_sync_misses++;
+
+							if (decoding_sync_misses < THRESHOLD) {
+								// light miss, we can probably just pretend we saw it and keep trucking on
+								//LogDebug("light miss, ignoring");
+								//cur_sample += widthSamples;
+							}
+							else {
+								// heavy miss, we need to skip lines because of this
+								//LogDebug("heavy miss, skipping lines");
+								//Decoding_SkipLines(lastSync, decoding_state_storage[3]);
+								decoding_sync_misses = 0;
+								continue;
+							}
 						}
 
-						// fast forward
-						i += std::max<int>(decoding_state_storage[3] - cur_sample, 0);
+						//LogDebug("Sync {} {} says 3 is {}", ins->name, decoding_instruction_idx, decoding_state_storage[3]);
 					}
 					else {
 						float expectedPitch = ins->pitch;
@@ -1635,9 +1717,30 @@ namespace fasstv {
 							#endif
 						}
 
+						// FIXME: BAD BANDAID FIX
+						// figure out *why* storage[3] (or cur_sample?) is getting off
+						// it seems to be related to i == 1? for some reason?
+						int predictedGap = (cur_sample - widthSamples) - decoding_state_storage[3];
+						/*if (predictedGap > 0) {
+							LogDebug("[{}] #{} line {} predicted gap {}smp", i, decoding_instruction_idx, decoding_pos[1], predictedGap);
+
+							#ifdef FASSTV_DEBUG
+							debug_Markers.emplace_back(decoding_state_storage[3], 2300, "storage[3]");
+							debug_Markers.emplace_back(cur_sample, 2300, "cur_sample");
+							debug_Markers.emplace_back(cur_sample - widthSamples, 2300, "start?");
+							#endif
+						}*/
+
+						cur_sample -= predictedGap;
+
+						//int check_sample = cur_sample - (widthSamples / 2);
+						//bool hit = AverageFreqAtAreaExpected(check_sample, expectedPitch, 25, 1.f, widthSamples, nullptr, ins->name, true);
+
 						decoding_state_storage[3] = cur_sample;
 
 						Decoding_NextInstruction();
+
+						continue;
 					}
 				}
 

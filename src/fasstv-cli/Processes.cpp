@@ -417,8 +417,8 @@ namespace fasstv::cli {
 #endif
 		}
 
-		//if (sstvdec.HasDecodedImage())
-			//OutputImage(nullptr, Options::options.outputPath);
+		if (sstvdec.IsDone() && sstvdec.HasDecodedImage())
+			OutputImage(nullptr, Options::options.outputPath);
 
 		if (surf_out)
 			SDL_free(surf_out);

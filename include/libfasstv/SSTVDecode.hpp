@@ -85,7 +85,9 @@ namespace fasstv {
 		enum class DecodingState;
 		void Decoding_SwitchState(DecodingState state);
 		void Decoding_NextInstruction();
-		bool Decoding_SearchForBestFit(SSTV::Instruction* ins, int expected_midpoint);
+		int Decoding_SearchForBestFit(SSTV::Instruction* ins, int expected_midpoint);
+		int Decoding_GetMissingSyncs(int last_good_sync, int this_sync);
+		void Decoding_SkipLines(int lines);
 
 #ifdef FASSTV_DEBUG
 		SDL_Renderer* debug_DebugWindowSetup();
@@ -169,14 +171,15 @@ namespace fasstv {
 			DecodingStateLast = Finish
 		};
 
+		std::vector<SSTV::Instruction> decoding_instructions {};
+		SSTV::Instruction* decoding_instruction_last = nullptr;
 		int decoding_cur_sample = -1;
 		DecodingState decoding_state {};
 		int decoding_state_storage[4] {};
-		std::vector<SSTV::Instruction> decoding_instructions {};
-		SSTV::Instruction* decoding_instruction_last = nullptr;
 		int decoding_pos[2] {};
 		int decoding_instruction_idx = -1;
 		int decoding_highest_field_encountered = -1;
+		int decoding_sync_misses = 0;
 
 		SSTV::Mode* decoded_mode = nullptr;
 		SSTVMetadata::PerModeMetadata* decoded_mode_meta = nullptr;

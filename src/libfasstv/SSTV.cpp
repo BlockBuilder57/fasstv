@@ -49,16 +49,7 @@ namespace fasstv {
 		}
 
 		// some modes (for example, Robot 36) can define multiple lines per instruction set
-		int instruction_divisor = 1;
-		if (mode->uses_extra_lines) {
-			instruction_divisor = 0;
-			for (const Instruction& ins : mode->instructions_looping) {
-				if (ins.flags & InstructionFlags::NewLine)
-					instruction_divisor++;
-			}
-		}
-
-		int lines = mode->lines / instruction_divisor;
+		int lines = mode->lines / mode->instruction_loop_num_lines;
 
 		// add the first non-looping instructions
 		if (mode->instruction_loop_start > 0) {
@@ -71,7 +62,7 @@ namespace fasstv {
 			for (size_t j = mode->instruction_loop_start; j < mode->instructions_looping.size(); j++) {
 				// found an extra line, but we don't use them - skip
 				SSTV::Instruction ins = mode->instructions_looping[j];
-				if (!mode->uses_extra_lines && ins.flags & SSTV::InstructionFlags::ExtraLine)
+				if (mode->instruction_loop_num_lines <= 1 && ins.flags & SSTV::InstructionFlags::ExtraLine)
 					continue;
 
 				instructions.push_back(ins);
